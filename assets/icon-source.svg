@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="xPoster app icon">
+  <rect x="8" y="8" width="112" height="112" rx="30" fill="#133F37"/>
+  <rect x="14" y="14" width="100" height="100" rx="25" fill="none" stroke="#F8F0DF" stroke-opacity=".18" stroke-width="2"/>
+
+  <path d="M24 87V36h14l17 23 17-23h14v51H71V62L55 83 39 62v25z" fill="#FBF4E6"/>
+  <path d="M71 90 90 71 80 61 61 80z" fill="#F0B848"/>
+  <path d="M82 45h29v29H98V58H82z" fill="#F0B848"/>
+</svg>
