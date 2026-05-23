@@ -149,34 +149,6 @@
         </div>
         <textarea id="markdown" spellcheck="false" placeholder="# Article title&#10;&#10;Paste your Markdown here."></textarea>
 
-        <section class="live-progress main-progress" id="liveProgress" aria-label="Article writing progress" data-tone="idle" hidden>
-          <div class="section-head">
-            <div>
-              <h2>Writing status</h2>
-              <p id="liveProgressMeta">Waiting for Markdown or Write.</p>
-            </div>
-            <span class="progress-state" id="liveProgressState">Idle</span>
-          </div>
-          <div class="progress-meter" aria-label="Writing progress meter">
-            <span id="liveProgressBar"></span>
-          </div>
-          <div class="progress-current">
-            <strong id="liveProgressTitle">Nothing is running</strong>
-            <span id="liveProgressDetail">Drop or paste a draft, then this card will show exactly what xPoster is doing.</span>
-          </div>
-          <ol class="progress-list" id="liveProgressList">
-            <li data-tone="idle">
-              <span class="progress-dot" aria-hidden="true"></span>
-              <div>
-                <strong>No writing updates yet</strong>
-                <span>This card shows progress and errors while xPoster writes.</span>
-              </div>
-            </li>
-          </ol>
-        </section>
-
-        <p class="draft-help">Markdown image links stay as text here. They become uploaded images when xPoster writes the article.</p>
-
         <section class="actions publish-dock" aria-label="Write article" data-empty="true">
           <div class="action-primary-block">
             <span class="action-label">Write Article</span>
@@ -190,41 +162,15 @@
             <button class="secondary" id="dockCheck" type="button">Check article</button>
           </div>
           <p class="import-hint" id="importHint" data-tone="warn">Uses the current X Article if one is open. Otherwise xPoster creates a new one.</p>
+          <section class="inline-write-status" id="liveProgress" aria-label="Article writing progress" data-tone="idle" hidden>
+            <div>
+              <strong id="liveProgressTitle">Nothing is running</strong>
+              <span id="liveProgressDetail">Drop or paste a draft, then click Write article.</span>
+            </div>
+            <span class="progress-state" id="liveProgressState">Idle</span>
+            <span class="progress-meter" aria-label="Writing progress meter"><span id="liveProgressBar"></span></span>
+          </section>
         </section>
-      </section>
-
-      <section class="remote-permissions" id="remotePermissionPanel" aria-label="Remote image access" data-tone="idle" hidden>
-        <div>
-          <h2>Web images stayed as links?</h2>
-          <p id="remotePermissionMeta">No remote image URLs detected.</p>
-        </div>
-        <ol class="remote-permission-steps" id="remotePermissionSteps" aria-label="Remote image steps">
-          <li data-remote-step="detect" data-tone="warn">
-            <strong>1</strong>
-            <span>Detect links</span>
-          </li>
-          <li data-remote-step="check" data-tone="idle">
-            <strong>2</strong>
-            <span>Check downloads</span>
-          </li>
-          <li data-remote-step="import" data-tone="idle">
-            <strong>3</strong>
-            <span>Write article</span>
-          </li>
-        </ol>
-        <ol id="remotePermissionList" class="remote-permission-list">
-          <li data-tone="idle">
-            <strong>No web images</strong>
-            <span>No remote image URLs detected.</span>
-          </li>
-        </ol>
-        <div class="remote-explainer" aria-label="How web images are handled">
-          <p><strong>What happens:</strong> xPoster downloads public web images in the extension background, then lets X upload them.</p>
-          <p><strong>Fallback:</strong> private, expired, blocked, or unreachable images stay as Markdown links in the article.</p>
-        </div>
-        <div class="remote-permission-actions" id="remotePermissionActions">
-          <button class="secondary compact" id="checkRemoteImages" type="button" disabled>Check downloads</button>
-        </div>
       </section>
 
       <section class="records panel" id="recordsPanel" data-panel="records" aria-label="Records">
@@ -251,6 +197,11 @@
               <p id="recordHistoryMeta">No records yet.</p>
             </div>
             <button class="secondary compact" id="clearRecordHistory" type="button" disabled>Clear</button>
+          </div>
+          <div class="record-search">
+            <label for="recordSearchInput">Search records</label>
+            <input id="recordSearchInput" type="search" autocomplete="off" placeholder="Search title, file, URL, or Markdown text" />
+            <span id="recordSearchSummary">Search past drafts, links, and write results.</span>
           </div>
           <ol class="record-history-list" id="recordHistoryList">
             <li class="record-history-empty">Load Markdown, run Check, or Write article to create the first record.</li>
@@ -400,8 +351,8 @@
                 <span>Click Check article after an article editor opens.</span>
             </li>
             <li data-proof="remote-images" data-tone="idle">
-              <strong>Remote image access</strong>
-              <span>No remote image URLs detected.</span>
+              <strong>Web images</strong>
+              <span>No web image links in this draft.</span>
             </li>
             <li data-proof="import" data-tone="idle">
               <strong>Import completed</strong>
@@ -443,8 +394,8 @@
               <span>Click Check article in the live X editor.</span>
             </li>
             <li data-audit="remote-images" data-tone="idle">
-              <strong>Remote image access</strong>
-              <span>No remote image URLs detected.</span>
+              <strong>Web images</strong>
+              <span>No web image links in this draft.</span>
             </li>
             <li data-audit="import" data-tone="idle">
               <strong>Import completed</strong>
@@ -662,8 +613,8 @@
                 <em>0</em>
               </li>
               <li data-map="remote" data-tone="idle">
-                <strong>Remote images</strong>
-                <span>No remote image URLs detected.</span>
+                <strong>Web images</strong>
+                <span>No web image links in this draft.</span>
                 <em>0</em>
               </li>
             </ol>
@@ -775,8 +726,8 @@
               <li data-check="remote-images" data-tone="idle">
                 <span class="check-mark" aria-hidden="true"></span>
                 <div>
-                  <strong>Remote images</strong>
-                  <span>No remote image URLs detected.</span>
+                  <strong>Web images</strong>
+                  <span>No web image links in this draft.</span>
                 </div>
               </li>
               <li data-check="plan" data-tone="idle">

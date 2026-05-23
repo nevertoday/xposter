@@ -667,7 +667,7 @@
       }
       if (skippedTables) parts.push(`${skippedTables} table(s) kept as Markdown`);
       const recovery = skippedImages
-        ? " Check downloads in xPoster or replace unreachable image URLs with public links."
+        ? " Replace unreachable image URLs with public links, then write again if those images must upload."
         : "";
       return `Article written${elapsed}. ${parts.join("; ")}.${recovery}`;
     }
@@ -1232,7 +1232,7 @@
       hint.id = DROP_HINT_ID;
       hint.setAttribute("aria-label", "xPoster drop tray");
       hint.innerHTML = `
-        <div class="__xposter_drop_kicker">xPoster drop tray</div>
+        <div class="__xposter_drop_kicker">Drop into xPoster</div>
         <strong></strong>
         <p></p>
         <div class="__xposter_drop_slots">
@@ -1258,7 +1258,7 @@
           ? "xPoster will remember this folder for local image paths. It will not import the article yet."
           : mode === "image"
             ? "xPoster will hand the image file to X's own uploader and insert it into the open article."
-          : "xPoster will create or use the open X Article, then show each import step.";
+          : "xPoster will create or use the open X Article and write the Markdown draft.";
     }
   }
 
@@ -1268,7 +1268,7 @@
 
   function positionDropHint(hint, event) {
     const width = Math.min(420, Math.max(280, window.innerWidth - 44));
-    const height = 188;
+    const height = 164;
     const margin = 14;
     const minLeft = margin;
     const maxLeft = Math.max(minLeft, window.innerWidth - width - margin);
@@ -1306,13 +1306,13 @@
         z-index: 2147483646;
         left: var(--xposter-drop-left, 22px);
         top: var(--xposter-drop-top, 96px);
-        width: min(420px, calc(100vw - 44px));
-        min-height: 188px;
+        width: min(400px, calc(100vw - 44px));
+        min-height: 164px;
         transform: translateY(0);
         display: grid;
         align-content: center;
-        gap: 12px;
-        padding: 20px;
+        gap: 10px;
+        padding: 18px;
         border: 2px solid #2f6f68;
         background:
           linear-gradient(110deg, transparent 0 24%, rgba(47, 111, 104, 0.15) 42%, transparent 62%),
@@ -1320,7 +1320,7 @@
           #fbfaf7;
         background-size: 190% 100%, auto, auto;
         color: #201f1b;
-        box-shadow: 0 28px 76px rgba(32, 31, 27, 0.28);
+        box-shadow: 0 24px 66px rgba(32, 31, 27, 0.26);
         font: 14px/1.45 ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
         letter-spacing: 0;
         pointer-events: none;
@@ -1341,13 +1341,13 @@
       }
       #${DROP_HINT_ID} strong {
         position: relative;
-        max-width: 15rem;
-        font-size: 22px;
-        line-height: 1.05;
+        max-width: 18rem;
+        font-size: 20px;
+        line-height: 1.08;
       }
       #${DROP_HINT_ID} p {
         position: relative;
-        max-width: 28rem;
+        max-width: 26rem;
         margin: 0;
         color: #5d584f;
         font-size: 13px;
@@ -1360,7 +1360,7 @@
         margin-top: 4px;
       }
       #${DROP_HINT_ID} .__xposter_drop_slots span {
-        min-height: 38px;
+        min-height: 34px;
         display: grid;
         place-items: center;
         border: 1px solid #d8d2c6;

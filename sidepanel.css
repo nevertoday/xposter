@@ -34,7 +34,8 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input {
   font: inherit;
 }
 
@@ -809,7 +810,7 @@ h2 {
 .composer {
   position: relative;
   min-height: min(680px, calc(100dvh - 146px));
-  grid-template-rows: auto auto auto minmax(300px, 1fr) auto auto auto;
+  grid-template-rows: auto auto auto minmax(300px, 1fr) auto;
   border: 1px solid var(--line);
   background: rgba(251, 250, 247, 0.86);
   transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
@@ -1239,210 +1240,6 @@ textarea::placeholder {
   font-size: 13px;
 }
 
-.remote-permissions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-  padding: 11px 12px;
-  border: 1px solid var(--line);
-  border-left-width: 4px;
-  background: var(--paper);
-}
-
-.remote-permissions[hidden] {
-  display: none;
-}
-
-.remote-permissions[data-tone="ok"] {
-  border-color: color-mix(in oklch, var(--signal), var(--line) 48%);
-}
-
-.remote-permissions[data-tone="ok"] .remote-explainer {
-  border-left-color: color-mix(in oklch, var(--signal), var(--line) 25%);
-  background: color-mix(in oklch, var(--signal), var(--paper) 92%);
-}
-
-.remote-permissions[data-tone="warn"] {
-  border-color: color-mix(in oklch, var(--warn), var(--line) 54%);
-}
-
-.remote-permissions[data-tone="error"] {
-  border-color: color-mix(in oklch, var(--danger), var(--line) 54%);
-}
-
-.remote-permissions h2 {
-  font-size: 13px;
-  line-height: 1.2;
-  text-wrap: balance;
-}
-
-.remote-permissions p {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.remote-permission-steps {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  border: 1px solid color-mix(in oklch, var(--line), transparent 20%);
-  background: color-mix(in oklch, var(--line), transparent 42%);
-}
-
-.remote-permission-steps li {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  align-items: center;
-  gap: 6px;
-  padding: 7px 8px;
-  background: color-mix(in oklch, var(--paper), var(--paper-2) 24%);
-}
-
-.remote-permission-steps strong {
-  width: 20px;
-  height: 20px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  background: var(--paper);
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 840;
-}
-
-.remote-permission-steps span {
-  min-width: 0;
-  color: var(--muted);
-  font-size: 10.5px;
-  font-weight: 780;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.remote-permission-steps li[data-tone="ok"] strong {
-  border-color: var(--signal);
-  background: var(--signal);
-  color: var(--signal-ink);
-}
-
-.remote-permission-steps li[data-tone="ok"] span {
-  color: var(--signal);
-}
-
-.remote-permission-steps li[data-tone="warn"] strong,
-.remote-permission-steps li[data-tone="warn"] span {
-  color: var(--warn);
-  border-color: color-mix(in oklch, var(--warn), var(--line) 42%);
-}
-
-.remote-permission-steps li[data-tone="error"] strong,
-.remote-permission-steps li[data-tone="error"] span {
-  color: var(--danger);
-  border-color: color-mix(in oklch, var(--danger), var(--line) 42%);
-}
-
-.remote-explainer {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
-  padding: 8px;
-  border-left: 2px solid color-mix(in oklch, var(--warn), var(--line) 38%);
-  background: color-mix(in oklch, var(--paper-2), var(--paper) 72%);
-}
-
-.remote-explainer p {
-  margin: 0;
-  color: color-mix(in oklch, var(--muted), var(--ink) 12%);
-  font-size: 10.5px;
-  line-height: 1.34;
-}
-
-.remote-explainer strong {
-  color: var(--ink);
-  font-weight: 820;
-}
-
-.remote-permission-actions {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: stretch;
-}
-
-.remote-permission-actions[hidden] {
-  display: none;
-}
-
-.remote-permission-actions .secondary {
-  flex: 1 1 150px;
-}
-
-.remote-permission-actions .secondary:first-child:not(:disabled) {
-  border-color: var(--signal);
-  background: var(--signal);
-  color: var(--signal-ink);
-}
-
-.remote-permission-list {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 5px;
-}
-
-.remote-permission-list li {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-  padding: 7px 8px;
-  border: 1px solid color-mix(in oklch, var(--line), transparent 22%);
-  background: color-mix(in oklch, var(--paper-2), var(--paper) 66%);
-}
-
-.remote-permission-list strong,
-.remote-permission-list span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.remote-permission-list strong {
-  font-size: 11px;
-  line-height: 1.25;
-}
-
-.remote-permission-list span {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.remote-permission-list li[data-tone="ok"] strong {
-  color: var(--signal);
-}
-
-.remote-permission-list li[data-tone="warn"] strong {
-  color: var(--warn);
-}
-
-.remote-permission-list li[data-tone="error"] strong {
-  color: var(--danger);
-}
-
 .diagnostics-details {
   border: 1px solid var(--line);
   background: color-mix(in oklch, var(--paper), var(--paper-2) 18%);
@@ -1807,8 +1604,7 @@ textarea::placeholder {
 
 .preflight,
 .issue-queue,
-.execution-timeline,
-.live-progress {
+.execution-timeline {
   display: grid;
   gap: 11px;
   padding: 13px;
@@ -2075,76 +1871,76 @@ textarea::placeholder {
   color: var(--danger);
 }
 
-.live-progress {
+.inline-write-status {
   position: relative;
   overflow: hidden;
-  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 9px;
+  align-items: center;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in oklch, var(--line), transparent 14%);
   background:
-    linear-gradient(90deg, color-mix(in oklch, var(--ink), transparent 95%), transparent 52%),
-    var(--paper);
+    linear-gradient(90deg, color-mix(in oklch, var(--signal), transparent 92%), transparent 64%),
+    color-mix(in oklch, var(--paper), var(--paper-2) 22%);
 }
 
-.live-progress::before,
-.live-progress::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+.inline-write-status[hidden] {
+  display: none;
 }
 
-.live-progress::before {
-  z-index: 0;
-  opacity: 0;
-  background:
-    linear-gradient(110deg, transparent 0 24%, color-mix(in oklch, var(--signal), transparent 82%) 43%, transparent 62%),
-    repeating-linear-gradient(90deg, transparent 0 15px, color-mix(in oklch, var(--signal), transparent 91%) 15px 16px);
-  transform: translateX(-62%);
-}
-
-.live-progress::after {
-  z-index: 0;
-  opacity: 0.16;
-  background: radial-gradient(circle at 16px 16px, color-mix(in oklch, var(--ink), transparent 92%) 1px, transparent 1.5px);
-  background-size: 22px 22px;
-  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
-}
-
-.live-progress > * {
+.inline-write-status > div {
   position: relative;
   z-index: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
 }
 
-.live-progress[data-tone="work"]::before {
-  opacity: 1;
-  animation: xposter-progress-sweep 2.8s linear infinite;
+.inline-write-status strong,
+.inline-write-status span {
+  min-width: 0;
 }
 
-.live-progress[data-tone="done"]::before,
-.live-progress[data-tone="ok"]::before {
-  opacity: 0.72;
-  transform: translateX(0);
+.inline-write-status strong {
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.inline-write-status > div > span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.32;
+  overflow-wrap: anywhere;
+}
+
+.inline-write-status[data-tone="work"] {
   background:
-    linear-gradient(110deg, color-mix(in oklch, #3f6f42, transparent 90%), transparent 58%),
-    repeating-linear-gradient(90deg, transparent 0 15px, color-mix(in oklch, #3f6f42, transparent 91%) 15px 16px);
+    linear-gradient(110deg, transparent 0 24%, color-mix(in oklch, var(--signal), transparent 84%) 42%, transparent 62%),
+    color-mix(in oklch, var(--signal), var(--paper) 93%);
+  background-size: 190% 100%, auto;
+  animation: xposter-inline-status-sweep 2.8s linear infinite;
 }
 
-.live-progress[data-tone="warn"]::before {
-  opacity: 0.85;
-  background:
-    linear-gradient(110deg, transparent 0 24%, color-mix(in oklch, var(--warn), transparent 83%) 43%, transparent 62%),
-    repeating-linear-gradient(90deg, transparent 0 15px, color-mix(in oklch, var(--warn), transparent 91%) 15px 16px);
-  animation: xposter-progress-sweep 3.2s linear infinite;
+.inline-write-status[data-tone="done"],
+.inline-write-status[data-tone="ok"] {
+  border-color: color-mix(in oklch, var(--signal), var(--line) 36%);
+  background: color-mix(in oklch, var(--signal), var(--paper) 91%);
 }
 
-.live-progress[data-tone="error"]::before {
-  opacity: 0.82;
-  transform: translateX(0);
-  background:
-    linear-gradient(110deg, color-mix(in oklch, var(--danger), transparent 88%), transparent 58%),
-    repeating-linear-gradient(90deg, transparent 0 15px, color-mix(in oklch, var(--danger), transparent 90%) 15px 16px);
+.inline-write-status[data-tone="warn"] {
+  border-color: color-mix(in oklch, var(--warn), var(--line) 42%);
+  background: color-mix(in oklch, var(--warn), var(--paper) 92%);
+}
+
+.inline-write-status[data-tone="error"] {
+  border-color: color-mix(in oklch, var(--danger), var(--line) 42%);
+  background: color-mix(in oklch, var(--danger), var(--paper) 92%);
 }
 
 .progress-state {
+  position: relative;
+  z-index: 1;
   flex: 0 0 auto;
   min-width: 68px;
   padding: 5px 7px;
@@ -2157,24 +1953,27 @@ textarea::placeholder {
   text-transform: uppercase;
 }
 
-.live-progress[data-tone="work"] .progress-state,
-.live-progress[data-tone="done"] .progress-state,
-.live-progress[data-tone="ok"] .progress-state {
+.inline-write-status[data-tone="work"] .progress-state,
+.inline-write-status[data-tone="done"] .progress-state,
+.inline-write-status[data-tone="ok"] .progress-state {
   border-color: color-mix(in oklch, var(--signal), var(--line) 42%);
   color: var(--signal);
 }
 
-.live-progress[data-tone="warn"] .progress-state {
+.inline-write-status[data-tone="warn"] .progress-state {
   border-color: color-mix(in oklch, var(--warn), var(--line) 48%);
   color: var(--warn);
 }
 
-.live-progress[data-tone="error"] .progress-state {
+.inline-write-status[data-tone="error"] .progress-state {
   border-color: color-mix(in oklch, var(--danger), var(--line) 48%);
   color: var(--danger);
 }
 
 .progress-meter {
+  position: relative;
+  z-index: 1;
+  grid-column: 1 / -1;
   height: 7px;
   overflow: hidden;
   border: 1px solid color-mix(in oklch, var(--line), transparent 18%);
@@ -2199,161 +1998,16 @@ textarea::placeholder {
   transform: translateX(-110%);
 }
 
-.live-progress[data-tone="work"] .progress-meter span::after {
+.inline-write-status[data-tone="work"] .progress-meter span::after {
   animation: xposter-meter-glide 1.8s linear infinite;
 }
 
-.live-progress[data-tone="warn"] .progress-meter span {
+.inline-write-status[data-tone="warn"] .progress-meter span {
   background: var(--warn);
 }
 
-.live-progress[data-tone="error"] .progress-meter span {
+.inline-write-status[data-tone="error"] .progress-meter span {
   background: var(--danger);
-}
-
-.progress-current {
-  display: grid;
-  gap: 3px;
-}
-
-.progress-current strong,
-.progress-current span {
-  display: block;
-  min-width: 0;
-}
-
-.progress-current strong {
-  font-size: 12px;
-  line-height: 1.25;
-}
-
-.progress-current span {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.38;
-  overflow-wrap: anywhere;
-}
-
-.progress-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 0;
-  border-top: 1px solid var(--line);
-}
-
-.progress-list li {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 16px 1fr;
-  gap: 9px;
-  padding: 9px 0;
-  border-bottom: 1px solid color-mix(in oklch, var(--line), transparent 30%);
-}
-
-.progress-list li:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
-}
-
-.progress-dot {
-  position: relative;
-  width: 10px;
-  height: 10px;
-  margin-top: 4px;
-  border: 1px solid var(--line);
-  background: var(--paper-2);
-}
-
-.progress-list strong,
-.progress-list span {
-  display: block;
-}
-
-.progress-list strong {
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-.progress-list div > span {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.progress-list li[data-tone="ok"] .progress-dot,
-.progress-list li[data-tone="done"] .progress-dot,
-.progress-list li[data-tone="work"] .progress-dot {
-  border-color: var(--signal);
-  background: var(--signal);
-}
-
-.progress-list li[data-tone="work"] .progress-dot::after {
-  content: "";
-  position: absolute;
-  inset: -5px;
-  border: 1px solid color-mix(in oklch, var(--signal), transparent 36%);
-  opacity: 0;
-  animation: xposter-dot-pulse 1.6s var(--ease-out-quint) infinite;
-}
-
-.progress-list li[data-tone="ok"] strong,
-.progress-list li[data-tone="done"] strong,
-.progress-list li[data-tone="work"] strong {
-  color: var(--signal);
-}
-
-.progress-list li[data-tone="warn"] .progress-dot {
-  border-color: var(--warn);
-  background: color-mix(in oklch, var(--warn), var(--paper) 82%);
-}
-
-.progress-list li[data-tone="warn"] strong {
-  color: var(--warn);
-}
-
-.progress-list li[data-tone="error"] .progress-dot {
-  border-color: var(--danger);
-  background: color-mix(in oklch, var(--danger), var(--paper) 82%);
-}
-
-.progress-list li[data-tone="error"] strong {
-  color: var(--danger);
-}
-
-.main-progress {
-  border-color: color-mix(in oklch, var(--signal), var(--line) 54%);
-  box-shadow: 0 12px 34px rgba(32, 31, 27, 0.09);
-}
-
-.main-progress[data-tone="idle"] {
-  border-color: color-mix(in oklch, var(--line), transparent 24%);
-}
-
-.main-progress[data-tone="work"],
-.main-progress[data-tone="done"],
-.main-progress[data-tone="ok"] {
-  border-color: color-mix(in oklch, var(--signal), var(--line) 38%);
-}
-
-.main-progress[data-tone="warn"] {
-  border-color: color-mix(in oklch, var(--warn), var(--line) 38%);
-}
-
-.main-progress[data-tone="error"] {
-  border-color: color-mix(in oklch, var(--danger), var(--line) 38%);
-}
-
-@keyframes xposter-progress-sweep {
-  from {
-    transform: translateX(-62%);
-  }
-  to {
-    transform: translateX(62%);
-  }
 }
 
 @keyframes xposter-meter-glide {
@@ -2365,14 +2019,12 @@ textarea::placeholder {
   }
 }
 
-@keyframes xposter-dot-pulse {
-  0% {
-    opacity: 0.46;
-    transform: scale(0.76);
+@keyframes xposter-inline-status-sweep {
+  from {
+    background-position: 160% 0, 0 0;
   }
-  100% {
-    opacity: 0;
-    transform: scale(1.42);
+  to {
+    background-position: -60% 0, 0 0;
   }
 }
 
@@ -2389,10 +2041,8 @@ textarea::placeholder {
 
 @media (prefers-reduced-motion: reduce) {
   .composer.drag-active::after,
-  .live-progress[data-tone="work"]::before,
-  .live-progress[data-tone="warn"]::before,
-  .live-progress[data-tone="work"] .progress-meter span::after,
-  .progress-list li[data-tone="work"] .progress-dot::after {
+  .inline-write-status[data-tone="work"],
+  .inline-write-status[data-tone="work"] .progress-meter span::after {
     animation: none;
   }
 }
@@ -2772,20 +2422,6 @@ textarea::placeholder {
   fill: currentColor;
 }
 
-.draft-help:empty {
-  display: none;
-}
-
-.draft-help {
-  min-height: 42px;
-  padding: 9px 12px 11px;
-  border-top: 1px solid color-mix(in oklch, var(--line), transparent 30%);
-  background: color-mix(in oklch, var(--warn), var(--paper) 95%);
-  color: color-mix(in oklch, var(--warn), var(--ink) 18%);
-  font-size: 11px;
-  line-height: 1.38;
-}
-
 .vault {
   display: flex;
   align-items: center;
@@ -2887,6 +2523,49 @@ textarea::placeholder {
 .record-history {
   display: grid;
   gap: 10px;
+}
+
+.record-search {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid color-mix(in oklch, var(--line), transparent 18%);
+  background:
+    linear-gradient(90deg, color-mix(in oklch, var(--signal), transparent 92%), transparent 58%),
+    color-mix(in oklch, var(--paper), var(--paper-2) 24%);
+}
+
+.record-search label {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 820;
+  line-height: 1.2;
+}
+
+.record-search input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid color-mix(in oklch, var(--line), transparent 12%);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.25;
+  outline: 0;
+  padding: 7px 9px;
+}
+
+.record-search input:focus {
+  border-color: color-mix(in oklch, var(--signal), var(--line) 36%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--signal), transparent 64%);
+}
+
+.record-search span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .record-history-list {
@@ -3039,6 +2718,19 @@ textarea::placeholder {
   padding: 0 10px 10px;
 }
 
+.record-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.record-actions .secondary {
+  min-width: 0;
+  justify-content: center;
+  padding-inline: 8px;
+  font-size: 11px;
+}
+
 .record-url-row {
   display: grid;
   grid-template-columns: 82px minmax(0, 1fr);
@@ -3100,11 +2792,13 @@ textarea::placeholder {
   overflow-wrap: anywhere;
 }
 
+.record-markdown-details,
 .record-raw-details {
   border: 1px solid var(--line);
   background: color-mix(in oklch, var(--paper), var(--ink) 3%);
 }
 
+.record-markdown-details summary,
 .record-raw-details summary {
   min-height: 34px;
   padding: 8px 10px;
@@ -3115,6 +2809,16 @@ textarea::placeholder {
   text-transform: uppercase;
 }
 
+.record-markdown-details p {
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  color: var(--warn);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.record-markdown-details pre,
 .record-raw-details pre {
   margin: 0;
   max-height: 210px;
@@ -3126,6 +2830,11 @@ textarea::placeholder {
   font: 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.record-markdown-details pre {
+  max-height: 280px;
+  color: var(--ink);
 }
 
 .summary-grid {
@@ -3649,10 +3358,6 @@ textarea::placeholder {
     grid-template-columns: 1fr;
   }
 
-  .remote-explainer {
-    grid-template-columns: 1fr;
-  }
-
   .vault,
   .setting-row {
     align-items: stretch;
@@ -3673,6 +3378,19 @@ textarea::placeholder {
 
   .section-head .button-cluster {
     justify-content: stretch;
+  }
+
+  .record-history-item summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .record-history-item time {
+    white-space: normal;
+  }
+
+  .record-actions,
+  .record-history-body dl {
+    grid-template-columns: 1fr;
   }
 
   .next-action {

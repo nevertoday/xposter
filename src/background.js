@@ -332,7 +332,7 @@ function remoteImageFetchError(url, reason, status = null, details = {}) {
     status === 404 ||
     /fetch failed|network|SSL|timed out|timeout/i.test(normalized);
   const hint = unavailable
-    ? `Chrome could not download this image from ${origin}. The signed image URL may be private, expired, blocked, or temporarily unreachable.${details.retriedSignedUrl ? " xPoster also retried this COS-style signed URL without unsigned response-* query parameters." : ""} Open the image URL in a normal tab; if it does not load there, regenerate a public image link and click Check downloads again.`
+    ? `Chrome could not download this image from ${origin}. The signed image URL may be private, expired, blocked, or temporarily unreachable.${details.retriedSignedUrl ? " xPoster also retried this COS-style signed URL without unsigned response-* query parameters." : ""} Open the image URL in a normal tab; if it does not load there, replace it with a fresh public link and write again.`
     : `${origin} did not return a usable image file.`;
   return {
     ok: false,
