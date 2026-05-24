@@ -128,7 +128,7 @@
 
       <section class="composer panel active" id="draftPanel" data-panel="draft">
         <div class="composer-head">
-          <label for="markdown" data-i18n="Markdown draft">Markdown draft</label>
+          <span class="composer-title" data-i18n="Markdown draft">Markdown draft</span>
           <div class="toolbar">
             <button class="icon-button" id="loadFile" title="Choose Markdown file" aria-label="Choose Markdown file" data-i18n-title="Choose Markdown file" data-i18n-aria-label="Choose Markdown file">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm-1 2.5L17.5 9H13V4.5ZM8 13h3V9h2v4h3l-4 4-4-4Z"/></svg>
@@ -151,7 +151,14 @@
           </div>
           <ol class="draft-queue-list" id="draftQueueList"></ol>
         </section>
-        <textarea id="markdown" spellcheck="false" placeholder="# Article title&#10;&#10;Paste your Markdown here. xPoster will preview text and images, then show the next step." data-i18n-placeholder="# Article title&#10;&#10;Paste your Markdown here. xPoster will preview text and images, then show the next step."></textarea>
+        <section class="current-draft" id="currentDraftCard" aria-label="Current Markdown draft" data-empty="true">
+          <div>
+            <strong id="currentDraftTitle">No draft selected</strong>
+            <span id="currentDraftMeta">Paste, choose, or drop Markdown to prepare an article.</span>
+          </div>
+          <button class="secondary compact" id="editCurrentDraft" type="button" data-i18n="Edit draft">Edit draft</button>
+        </section>
+        <textarea id="markdown" spellcheck="false" tabindex="-1" aria-hidden="true"></textarea>
 
         <section class="actions publish-dock" aria-label="Write article" data-empty="true">
           <div class="action-primary-block">
@@ -203,30 +210,6 @@
           <ol class="record-history-list" id="recordHistoryList">
             <li class="record-history-empty">Paste or load Markdown to save the first recoverable draft.</li>
           </ol>
-          <div class="record-edit-sheet" id="recordEditSheet" role="dialog" aria-modal="true" aria-labelledby="recordEditTitle" hidden>
-            <section class="record-edit-dialog">
-              <header>
-                <div>
-                  <strong id="recordEditTitle">Edit saved Markdown</strong>
-                  <span id="recordEditMeta">Saved Markdown</span>
-                </div>
-                <button class="record-icon-action" type="button" data-record-action="cancel-edit" title="Close" aria-label="Close" data-i18n-title="Close" data-i18n-aria-label="Close">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z"/></svg>
-                </button>
-              </header>
-              <textarea id="recordEditTextarea" spellcheck="false"></textarea>
-              <div class="record-edit-actions">
-                <button class="secondary compact" type="button" data-record-action="copy-edited" title="Copy text" aria-label="Copy text" data-i18n-title="Copy text" data-i18n-aria-label="Copy text">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h10v13H8V7Zm2 2v9h6V9h-6ZM5 4h10v2H7v10H5V4Z"/></svg>
-                  <span data-i18n="Copy text">Copy text</span>
-                </button>
-                <button class="primary compact" type="button" data-record-action="use-edited">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v2H5V4Zm0 4h8v2H5V8Zm0 4h7v2H5v-2Zm11 1V8h2v5h3l-4 4-4-4h3Zm-3 6h8v2h-8v-2Z"/></svg>
-                  <span data-i18n="Use draft">Use draft</span>
-                </button>
-              </div>
-            </section>
-          </div>
         </section>
 
         <section class="live-runbook" id="verificationPanel" aria-label="Post-import review" hidden>
@@ -945,6 +928,31 @@
       </section>
 
     </main>
+
+    <div class="record-edit-sheet" id="recordEditSheet" role="dialog" aria-modal="true" aria-labelledby="recordEditTitle" hidden>
+      <section class="record-edit-dialog">
+        <header>
+          <div>
+            <strong id="recordEditTitle">Edit saved Markdown</strong>
+            <span id="recordEditMeta">Saved Markdown</span>
+          </div>
+          <button class="record-icon-action" type="button" data-record-action="cancel-edit" title="Close" aria-label="Close" data-i18n-title="Close" data-i18n-aria-label="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z"/></svg>
+          </button>
+        </header>
+        <textarea id="recordEditTextarea" spellcheck="false"></textarea>
+        <div class="record-edit-actions">
+          <button class="secondary compact" type="button" data-record-action="copy-edited" title="Copy text" aria-label="Copy text" data-i18n-title="Copy text" data-i18n-aria-label="Copy text">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h10v13H8V7Zm2 2v9h6V9h-6ZM5 4h10v2H7v10H5V4Z"/></svg>
+            <span data-i18n="Copy text">Copy text</span>
+          </button>
+          <button class="primary compact" type="button" data-record-action="use-edited">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v2H5V4Zm0 4h8v2H5V8Zm0 4h7v2H5v-2Zm11 1V8h2v5h3l-4 4-4-4h3Zm-3 6h8v2h-8v-2Z"/></svg>
+            <span id="recordEditPrimaryLabel" data-i18n="Use draft">Use draft</span>
+          </button>
+        </div>
+      </section>
+    </div>
 
     <script src="src/i18n.js"></script>
     <script src="src/shared.js"></script>

@@ -59,9 +59,14 @@
     recordEditTitle: document.getElementById("recordEditTitle"),
     recordEditMeta: document.getElementById("recordEditMeta"),
     recordEditTextarea: document.getElementById("recordEditTextarea"),
+    recordEditPrimaryLabel: document.getElementById("recordEditPrimaryLabel"),
     draftQueue: document.getElementById("draftQueue"),
     draftQueueMeta: document.getElementById("draftQueueMeta"),
     draftQueueList: document.getElementById("draftQueueList"),
+    currentDraftCard: document.getElementById("currentDraftCard"),
+    currentDraftTitle: document.getElementById("currentDraftTitle"),
+    currentDraftMeta: document.getElementById("currentDraftMeta"),
+    editCurrentDraft: document.getElementById("editCurrentDraft"),
     clearRecordHistory: document.getElementById("clearRecordHistory"),
     reviewMeta: document.getElementById("reviewMeta"),
     reviewList: document.getElementById("reviewList"),
@@ -255,6 +260,7 @@ console.log("示例代码块");
   let activeQueueItemId = null;
   let recordSearchQuery = "";
   let activeRecordEditorId = null;
+  let activeDraftEditor = null;
   let liveResultChecks = {};
   let currentNextAction = null;
   let targetLock = null;
@@ -298,6 +304,16 @@ console.log("示例代码块");
       "Move a Markdown draft into X Article": "把 Markdown 草稿导入 X 文章",
       "Paste, check, import": "粘贴、检查、导入",
       "Paste or load a draft. xPoster shows the next safe step and keeps the technical checks out of your way unless something needs attention.": "粘贴或加载草稿。xPoster 会显示下一步，只有需要处理时才展示技术检查。",
+      "Current Markdown draft": "当前 Markdown 草稿",
+      "No draft selected": "未选择草稿",
+      "Paste, choose, or drop Markdown to prepare an article.": "粘贴、选择或拖入 Markdown 来准备文章。",
+      "Edit draft": "编辑草稿",
+      "Draft actions": "草稿操作",
+      "Save draft": "保存草稿",
+      "Markdown updated": "Markdown 已更新",
+      "Markdown draft updated.": "Markdown 草稿已更新。",
+      "Queued Markdown copied.": "已复制队列中的 Markdown。",
+      "Queued Markdown updated.": "队列中的 Markdown 已更新。",
       "Put your draft in the box below. xPoster shows the next step and will not write to X until you click Import.": "把草稿放进下面的输入框。xPoster 会显示下一步；只有你点击导入时才会写入 X。",
       "Import in three steps": "三步完成导入",
       "Three-step import": "三步导入",
@@ -2397,6 +2413,43 @@ console.log("示例代码块");
     return "Queued";
   }
 
+  function currentDraftTitle() {
+    const activeItem = draftQueue.find((item) => item.id === activeQueueItemId);
+    if (activeItem && activeItem.markdown === els.markdown.value) return activeItem.title || activeItem.fileName || "Untitled Markdown";
+    return latestParsed?.title || markdownQueueTitle(els.markdown.value || "", "Markdown draft");
+  }
+
+  function currentDraftMeta() {
+    const markdown = els.markdown.value || "";
+    if (!markdown.trim()) return "Paste, choose, or drop Markdown to prepare an article.";
+    const activeItem = draftQueue.find((item) => item.id === activeQueueItemId);
+    const source = activeItem?.fileName || (activeItem ? "Queued draft" : "Draft");
+    const counts = latestCounts || shared.segmentCounts(latestParsed?.segments || []);
+    const contentParts = [
+      `${Number(markdown.length).toLocaleString()} chars`,
+      counts.text ? `${counts.text} text` : "",
+      counts.image ? `${counts.image} image${counts.image === 1 ? "" : "s"}` : "",
+      counts.table ? `${counts.table} table${counts.table === 1 ? "" : "s"}` : ""
+    ].filter(Boolean);
+    return [source, contentParts.join(", ")].filter(Boolean).join(" · ");
+  }
+
+  function updateCurrentDraftCard() {
+    if (!els.currentDraftCard) return;
+    const markdown = els.markdown.value || "";
+    const hasDraft = Boolean(markdown.trim());
+    els.currentDraftCard.dataset.empty = hasDraft ? "false" : "true";
+    if (els.currentDraftTitle) {
+      delete els.currentDraftTitle.dataset.i18n;
+      els.currentDraftTitle.textContent = hasDraft ? currentDraftTitle() : localizeText("No draft selected");
+    }
+    if (els.currentDraftMeta) {
+      delete els.currentDraftMeta.dataset.i18n;
+      els.currentDraftMeta.textContent = hasDraft ? currentDraftMeta() : localizeText("Paste, choose, or drop Markdown to prepare an article.");
+    }
+    if (els.editCurrentDraft) els.editCurrentDraft.disabled = false;
+  }
+
   function renderDraftQueue() {
     if (!els.draftQueue || !els.draftQueueList) return;
     const hasQueue = draftQueue.length > 0;
@@ -2404,6 +2457,7 @@ console.log("示例代码块");
     if (els.draftQueueMeta) els.draftQueueMeta.textContent = queueSummaryText();
     if (!hasQueue) {
       els.draftQueueList.innerHTML = "";
+      updateCurrentDraftCard();
       return;
     }
     const safe = shared.escapeHtml;
@@ -2415,12 +2469,21 @@ console.log("示例代码块");
           <em>${safe([item.fileName, localizeText(`${Number(item.characters || 0).toLocaleString()} chars`)].filter(Boolean).join(" · "))}</em>
         </button>
         <span class="draft-queue-state">${safe(localizeText(queueStatusLabel(item)))}</span>
-        <button class="record-icon-action draft-queue-remove" type="button" data-queue-action="remove" data-queue-id="${safe(item.id)}" title="${safe(localizeText("Remove from queue"))}" aria-label="${safe(localizeText("Remove from queue"))}">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h8l1 2h4v2H3V5h4l1-2Zm1 6h2v10H9V9Zm4 0h2v10h-2V9Zm4 0h2l-1 12H6L5 9h2l.7 10h8.6L17 9Z"/></svg>
-        </button>
+        <div class="draft-queue-actions" aria-label="${safe(localizeText("Draft actions"))}">
+          <button class="record-icon-action draft-queue-edit" type="button" data-queue-action="edit" data-queue-id="${safe(item.id)}" title="${safe(localizeText("Edit draft"))}" aria-label="${safe(localizeText("Edit draft"))}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.8 4.2a2.9 2.9 0 0 1 4.1 4.1L9.7 18.5 5 19l.5-4.7L15.8 4.2Zm1.4 1.4L7.4 15.4l-.2 1.4 1.4-.2 9.8-9.8a.9.9 0 0 0-1.2-1.2Z"/></svg>
+          </button>
+          <button class="record-icon-action draft-queue-copy" type="button" data-queue-action="copy" data-queue-id="${safe(item.id)}" title="${safe(localizeText("Copy text"))}" aria-label="${safe(localizeText("Copy text"))}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h10v13H8V7Zm2 2v9h6V9h-6ZM5 4h10v2H7v10H5V4Z"/></svg>
+          </button>
+          <button class="record-icon-action draft-queue-remove" type="button" data-queue-action="remove" data-queue-id="${safe(item.id)}" title="${safe(localizeText("Remove from queue"))}" aria-label="${safe(localizeText("Remove from queue"))}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h8l1 2h4v2H3V5h4l1-2Zm1 6h2v10H9V9Zm4 0h2v10h-2V9Zm4 0h2l-1 12H6L5 9h2l.7 10h8.6L17 9Z"/></svg>
+          </button>
+        </div>
       </li>
     `).join("");
     translateDynamicDom(els.draftQueue);
+    updateCurrentDraftCard();
   }
 
   async function restoreDraftQueue() {
@@ -2456,7 +2519,7 @@ console.log("示例代码块");
     return nextItems;
   }
 
-  function handleDraftQueueClick(event) {
+  async function handleDraftQueueClick(event) {
     const button = event.target.closest("[data-queue-action]");
     if (!button) return;
     const id = button.dataset.queueId || button.closest("[data-queue-id]")?.dataset.queueId;
@@ -2467,6 +2530,15 @@ console.log("示例代码块");
         setActiveJump("draft");
         log("Queued Markdown loaded.");
       }
+      return;
+    }
+    if (button.dataset.queueAction === "edit") {
+      openQueueEditor(id);
+      return;
+    }
+    if (button.dataset.queueAction === "copy") {
+      const item = draftQueue.find((entry) => entry.id === id);
+      await copyMarkdownText(item?.markdown || "", { success: "Queued Markdown copied." });
       return;
     }
     if (button.dataset.queueAction === "remove") {
@@ -2498,6 +2570,7 @@ console.log("示例代码块");
     if (persist) persistDraftQueue();
     renderDraftQueue();
     updateWriteButton();
+    updateCurrentDraftCard();
     return true;
   }
 
@@ -2507,6 +2580,7 @@ console.log("示例代码块");
     if (wasActive) activeQueueItemId = null;
     persistDraftQueue();
     renderDraftQueue();
+    if (wasActive) updateCurrentDraftCard();
   }
 
   function markActiveQueueItemWritten() {
@@ -2520,6 +2594,93 @@ console.log("示例代码块");
     draftQueue = draftQueue.map((item) => item.id === activeQueueItemId ? { ...item, status: "written", writtenAt: now } : item);
     persistDraftQueue();
     renderDraftQueue();
+  }
+
+  function updateQueueItemMarkdown(id, markdown) {
+    const item = draftQueue.find((entry) => entry.id === id);
+    const text = String(markdown || "");
+    if (!item || !text.trim()) return false;
+    const updated = {
+      ...item,
+      title: markdownQueueTitle(text, item.fileName || item.title || "Untitled Markdown"),
+      markdown: text,
+      characters: text.length,
+      status: item.status === "written" ? "queued" : item.status,
+      updatedAt: new Date().toISOString()
+    };
+    draftQueue = draftQueue.map((entry) => entry.id === id ? updated : entry);
+    if (id === activeQueueItemId) {
+      suppressNextTypedHistory = true;
+      window.clearTimeout(draftInputHistoryTimer);
+      els.markdown.value = text;
+      saveDraft();
+      analyzeDraft();
+      rememberDraftHistory("queue", {
+        forceNew: true,
+        fileName: updated.fileName,
+        size: updated.characters,
+        queueItemId: updated.id
+      });
+      setDraftDropStatus("Markdown updated", draftReadyDetail(text.length), "done");
+      acknowledgeDraftInput();
+    }
+    persistDraftQueue();
+    renderDraftQueue();
+    updateWriteButton();
+    return true;
+  }
+
+  function writeDraftMarkdown(markdown, { source = "typed", fileName = null, forceNew = true, queueItemId = null, statusTitle = "Markdown loaded", remember = true } = {}) {
+    const text = String(markdown || "");
+    suppressNextTypedHistory = true;
+    window.clearTimeout(draftInputHistoryTimer);
+    els.markdown.value = text;
+    saveDraft();
+    analyzeDraft();
+    syncActiveQueueWithDraft();
+    if (text.trim()) {
+      if (remember) {
+        rememberDraftHistory(source, {
+          forceNew,
+          fileName,
+          size: text.length,
+          queueItemId
+        });
+      }
+      setDraftDropStatus(statusTitle, draftReadyDetail(text.length), "done");
+      acknowledgeDraftInput();
+    }
+    updateCurrentDraftCard();
+    updateWriteButton();
+  }
+
+  function setDraftMarkdown(markdown, { source = "typed", fileName = null, forceNew = true, queueItemId = null, statusTitle = "Markdown loaded", logMessage = "" } = {}) {
+    writeDraftMarkdown(markdown, { source, fileName, forceNew, queueItemId, statusTitle });
+    if (logMessage) log(logMessage);
+  }
+
+  function setMarkdownEditorOpen(open) {
+    if (!els.recordEditSheet) return;
+    els.recordEditSheet.hidden = !open;
+    document.body.dataset.modalOpen = open ? "true" : "false";
+  }
+
+  function configureMarkdownEditor({ title, meta, value, primaryLabel, mode, id }) {
+    if (!els.recordEditSheet || !els.recordEditTextarea) return;
+    activeDraftEditor = { mode, id };
+    if (els.recordEditTitle) els.recordEditTitle.textContent = title;
+    if (els.recordEditMeta) els.recordEditMeta.textContent = meta;
+    if (els.recordEditPrimaryLabel) {
+      els.recordEditPrimaryLabel.dataset.i18n = primaryLabel;
+      els.recordEditPrimaryLabel.textContent = primaryLabel;
+    }
+    els.recordEditTextarea.dataset.editorMode = mode;
+    els.recordEditTextarea.dataset.recordId = mode === "record" ? id : "";
+    els.recordEditTextarea.dataset.queueId = mode === "queue" ? id : "";
+    els.recordEditTextarea.value = value;
+    setMarkdownEditorOpen(true);
+    translateDynamicDom(els.recordEditSheet);
+    window.setTimeout(() => els.recordEditTextarea?.focus?.(), 0);
   }
 
   async function filesToQueueItems(files) {
@@ -2623,6 +2784,7 @@ console.log("示例代码块");
       updateWriteButton();
       updateProgressiveSections();
       setDraftDropStatus("Paste or drop Markdown", "Paste text or choose a .md file.", "idle");
+      updateCurrentDraftCard();
       return;
     }
     try {
@@ -2647,9 +2809,11 @@ console.log("示例代码块");
       updateWriteButton();
       updateProgressiveSections();
       setDraftDropStatus("Markdown loaded", draftReadyDetail(markdown.length, counts), "done");
+      updateCurrentDraftCard();
     } catch (error) {
       log(`Could not analyze draft: ${error?.message || error}`);
       setDraftDropStatus("Could not load Markdown", error?.message || "Try a .md, .markdown, .txt file, or plain Markdown text.", "error");
+      updateCurrentDraftCard();
     }
   }
 
@@ -6245,11 +6409,13 @@ console.log("示例代码块");
       log("Markdown snapshot not available.");
       return;
     }
-    suppressNextTypedHistory = true;
-    window.clearTimeout(draftInputHistoryTimer);
-    els.markdown.value = markdown;
-    saveDraft();
-    analyzeDraft();
+    writeDraftMarkdown(markdown, {
+      source: "restored",
+      fileName: record?.source?.fileName || null,
+      forceNew: true,
+      statusTitle: "Markdown restored",
+      remember: false
+    });
     rememberDraftHistory("restored", {
       forceNew: true,
       sourceRecordId: record?.id || null,
@@ -6258,9 +6424,6 @@ console.log("示例代码块");
     });
     showWorkspacePanel("draft");
     setActiveJump("draft");
-    setDraftDropStatus("Markdown restored", draftReadyDetail(markdown.length), "done");
-    acknowledgeDraftInput();
-    els.markdown.focus?.();
     log(message);
   }
 
@@ -6285,32 +6448,108 @@ console.log("示例代码块");
 
   function syncRecordEditSheet() {
     if (!els.recordEditSheet) return;
+    if (activeDraftEditor?.mode && activeDraftEditor.mode !== "record") return;
     const record = currentRecord(activeRecordEditorId);
     if (!record) {
-      els.recordEditSheet.hidden = true;
+      setMarkdownEditorOpen(false);
       if (els.recordEditTextarea) els.recordEditTextarea.value = "";
+      activeDraftEditor = null;
       return;
     }
     const updatedTime = formatRecordTime(record.updatedAt || record.capturedAt);
-    if (els.recordEditTitle) els.recordEditTitle.textContent = recordDisplayTitle(record);
-    if (els.recordEditMeta) els.recordEditMeta.textContent = recordSourceMeta(record, updatedTime) || "Saved Markdown";
-    if (els.recordEditTextarea && els.recordEditTextarea.dataset.recordId !== record.id) {
-      els.recordEditTextarea.dataset.recordId = record.id;
-      els.recordEditTextarea.value = recordMarkdownText(record);
-    }
-    els.recordEditSheet.hidden = false;
-    translateDynamicDom(els.recordEditSheet);
+    configureMarkdownEditor({
+      title: recordDisplayTitle(record),
+      meta: recordSourceMeta(record, updatedTime) || "Saved Markdown",
+      value: recordMarkdownText(record),
+      primaryLabel: "Use draft",
+      mode: "record",
+      id: record.id
+    });
   }
 
   function openRecordEditor(recordId) {
     activeRecordEditorId = recordId;
     syncRecordEditSheet();
-    window.setTimeout(() => els.recordEditTextarea?.focus?.(), 0);
   }
 
   function closeRecordEditor() {
     activeRecordEditorId = null;
+    activeDraftEditor = null;
     syncRecordEditSheet();
+  }
+
+  function openCurrentDraftEditor() {
+    const markdown = els.markdown.value || "";
+    configureMarkdownEditor({
+      title: markdown.trim() ? currentDraftTitle() : "Markdown draft",
+      meta: markdown.trim() ? currentDraftMeta() : "Paste, choose, or drop Markdown to prepare an article.",
+      value: markdown,
+      primaryLabel: "Save draft",
+      mode: "current",
+      id: activeQueueItemId || ""
+    });
+  }
+
+  function openQueueEditor(queueId) {
+    const item = draftQueue.find((entry) => entry.id === queueId);
+    if (!item) return;
+    configureMarkdownEditor({
+      title: item.title || item.fileName || "Queued Markdown",
+      meta: [item.fileName, `${Number(item.characters || 0).toLocaleString()} chars`, queueStatusLabel(item)].filter(Boolean).join(" · "),
+      value: item.markdown,
+      primaryLabel: "Save draft",
+      mode: "queue",
+      id: item.id
+    });
+  }
+
+  function closeMarkdownEditor() {
+    activeRecordEditorId = null;
+    activeDraftEditor = null;
+    if (els.recordEditTextarea) {
+      els.recordEditTextarea.value = "";
+      els.recordEditTextarea.dataset.editorMode = "";
+      els.recordEditTextarea.dataset.recordId = "";
+      els.recordEditTextarea.dataset.queueId = "";
+    }
+    setMarkdownEditorOpen(false);
+  }
+
+  async function copyEditedMarkdown() {
+    const edited = recordEditorTextarea()?.value || "";
+    await copyMarkdownText(edited, {
+      fallbackRecordId: activeDraftEditor?.mode === "record" ? activeDraftEditor.id : null,
+      success: "Edited Markdown copied.",
+      fallback: "Markdown is open in the editor."
+    });
+  }
+
+  function saveEditedMarkdown() {
+    const edited = recordEditorTextarea()?.value || "";
+    if (!edited.trim()) {
+      log("Markdown snapshot not available.");
+      return;
+    }
+    const editor = activeDraftEditor || { mode: els.recordEditTextarea?.dataset.editorMode, id: els.recordEditTextarea?.dataset.recordId };
+    if (editor.mode === "record") {
+      const record = currentRecord(editor.id || activeRecordEditorId);
+      restoreRecordMarkdownText(record, edited, "Edited Markdown restored to Pending.");
+    } else if (editor.mode === "queue") {
+      updateQueueItemMarkdown(editor.id, edited);
+      log("Queued Markdown updated.");
+    } else {
+      if (activeQueueItemId) {
+        updateQueueItemMarkdown(activeQueueItemId, edited);
+        log("Markdown draft updated.");
+      } else {
+        setDraftMarkdown(edited, {
+          source: "typed",
+          statusTitle: "Markdown updated",
+          logMessage: "Markdown draft updated."
+        });
+      }
+    }
+    closeMarkdownEditor();
   }
 
   function recordEditorTextarea() {
@@ -6331,21 +6570,26 @@ console.log("示例代码块");
     } else if (action === "edit") {
       openRecordEditor(recordId);
     } else if (action === "cancel-edit") {
-      closeRecordEditor();
+      closeMarkdownEditor();
     } else if (action === "use-edited") {
-      const record = currentRecord(recordId);
-      const edited = recordEditorTextarea()?.value || "";
-      restoreRecordMarkdownText(record, edited, "Edited Markdown restored to Pending.");
-      closeRecordEditor();
+      saveEditedMarkdown();
     } else if (action === "copy-edited") {
-      const edited = recordEditorTextarea()?.value || "";
-      await copyMarkdownText(edited, {
-        fallbackRecordId: recordId,
-        success: "Edited Markdown copied.",
-        fallback: "Markdown is open in the editor."
-      });
+      await copyEditedMarkdown();
     } else if (action === "copy-markdown") {
       await copyRecordMarkdown(recordId);
+    }
+  }
+
+  async function handleMarkdownEditorClick(event) {
+    const button = event.target.closest("button[data-record-action]");
+    if (!button) return;
+    const action = button.dataset.recordAction;
+    if (action === "cancel-edit") {
+      closeMarkdownEditor();
+    } else if (action === "use-edited") {
+      saveEditedMarkdown();
+    } else if (action === "copy-edited") {
+      await copyEditedMarkdown();
     }
   }
 
@@ -6815,9 +7059,21 @@ console.log("示例代码块");
   els.recordHistory?.addEventListener("click", handleRecordHistoryClick);
   els.recordHistory?.addEventListener("dblclick", handleRecordHistoryDblClick);
   els.recordHistory?.addEventListener("keydown", handleRecordHistoryKeydown);
+  els.editCurrentDraft?.addEventListener("click", openCurrentDraftEditor);
   els.draftQueueList?.addEventListener("click", handleDraftQueueClick);
   els.recordEditSheet?.addEventListener("click", (event) => {
-    if (event.target === els.recordEditSheet) closeRecordEditor();
+    if (event.target === els.recordEditSheet) closeMarkdownEditor();
+  });
+  els.recordEditSheet?.addEventListener("click", handleMarkdownEditorClick);
+  els.recordEditSheet?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMarkdownEditor();
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      saveEditedMarkdown();
+    }
   });
   els.focusRunbook.addEventListener("click", () => {
     jumpToSection("verify");

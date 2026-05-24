@@ -59,6 +59,10 @@ body {
   letter-spacing: 0;
 }
 
+body[data-modal-open="true"] {
+  overflow: hidden;
+}
+
 :root[data-theme="dark"] body {
   background:
     linear-gradient(180deg, rgba(26, 38, 48, 0.74), transparent 180px),
@@ -919,7 +923,7 @@ h2 {
 .composer {
   position: relative;
   min-height: min(720px, calc(100dvh - 104px));
-  grid-template-rows: auto auto auto minmax(300px, 1fr) auto;
+  grid-template-rows: auto auto auto auto;
   border: 1px solid var(--line);
   background: color-mix(in oklch, var(--paper), transparent 14%);
   transform-origin: 50% 0;
@@ -1076,6 +1080,7 @@ h2 {
 
 :root[data-theme="dark"] .drop-status,
 :root[data-theme="dark"] .draft-queue-item,
+:root[data-theme="dark"] .current-draft,
 :root[data-theme="dark"] .record-history-item,
 :root[data-theme="dark"] .records-empty,
 :root[data-theme="dark"] .record-history-empty,
@@ -1140,17 +1145,18 @@ h2 {
 
 .draft-queue-list {
   display: grid;
-  max-height: 120px;
+  max-height: 240px;
   margin: 0;
   padding: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   list-style: none;
 }
 
 .draft-queue-item {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 30px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 5px;
   min-height: 38px;
@@ -1236,9 +1242,68 @@ h2 {
   color: var(--ok);
 }
 
+.draft-queue-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.draft-queue-edit,
+.draft-queue-copy,
 .draft-queue-remove {
   width: 28px;
   height: 28px;
+}
+
+.current-draft {
+  grid-row: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 11px 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--line), transparent 38%);
+  background: var(--paper);
+}
+
+.current-draft div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.current-draft strong,
+.current-draft span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.current-draft strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 820;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.current-draft span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.32;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.current-draft[data-empty="true"] {
+  color: var(--muted);
+}
+
+.current-draft[data-empty="true"] strong {
+  color: var(--muted);
 }
 
 .composer.drag-active .drop-status {
@@ -1251,6 +1316,7 @@ h2 {
 
 .composer.drag-active .composer-head,
 .composer.drag-active .draft-queue,
+.composer.drag-active .current-draft,
 .composer.drag-active #markdown {
   opacity: .34;
   pointer-events: none;
@@ -1273,7 +1339,7 @@ h2 {
   border-bottom: 0;
 }
 
-.composer-head label {
+.composer-title {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
@@ -1338,7 +1404,16 @@ h2 {
 }
 
 #markdown {
-  grid-row: 4;
+  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  resize: none;
 }
 
 textarea {
@@ -3342,10 +3417,13 @@ textarea:focus-visible,
   inset: 0;
   z-index: 90;
   display: grid;
-  align-items: end;
+  align-items: center;
   padding: 10px;
   padding-bottom: max(10px, env(safe-area-inset-bottom));
   background: color-mix(in oklch, var(--ink), transparent 72%);
+  overflow: hidden;
+  overscroll-behavior: contain;
+  touch-action: none;
   animation: xposter-sheet-fade var(--motion-medium) var(--ease-out-quint) both;
 }
 
@@ -3361,6 +3439,8 @@ textarea:focus-visible,
   background: var(--paper);
   box-shadow: 0 24px 70px color-mix(in oklch, var(--ink), transparent 68%);
   animation: xposter-sheet-rise var(--motion-medium) var(--ease-out-quint) both;
+  overscroll-behavior: contain;
+  touch-action: auto;
 }
 
 .record-edit-dialog header {
@@ -3410,6 +3490,8 @@ textarea:focus-visible,
   color: var(--ink);
   font: 11.5px/1.48 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   outline: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .record-edit-dialog textarea:focus {
@@ -4040,7 +4122,7 @@ textarea:focus-visible,
 
   .composer {
     min-height: min(700px, calc(100dvh - 92px));
-    grid-template-rows: auto auto auto minmax(260px, 1fr) auto;
+    grid-template-rows: auto auto auto auto;
   }
 
   .draft-queue {
@@ -4057,7 +4139,22 @@ textarea:focus-visible,
   }
 
   .draft-queue-item {
-    grid-template-columns: minmax(0, 1fr) auto 32px;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .draft-queue-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    padding-bottom: 6px;
+  }
+
+  .current-draft {
+    grid-template-columns: 1fr;
+  }
+
+  .current-draft .secondary {
+    width: 100%;
+    justify-content: center;
   }
 
   textarea {

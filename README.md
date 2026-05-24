@@ -42,12 +42,19 @@ Use the source install only if you want to inspect or modify the extension yours
 
 1. Open or create an X Article at `https://x.com/compose/articles`.
 2. Open the xPoster side panel.
-3. Paste Markdown into the draft box, choose a Markdown file, or click **Example**.
+3. Click **Edit draft** to paste Markdown, choose a Markdown file, or click **Example**.
+   If you choose or drop multiple Markdown files, xPoster keeps them in a pending queue instead of opening every draft inline.
 4. Check the preview and the issue list.
 5. Click **Check article** so xPoster can confirm the active X Article tab is reachable.
-6. Click **Import**.
+6. Select the queued draft you want, edit it in the popup if needed, then click **Write article / Import**.
 7. Review the article inside X.
 8. Click X's own Publish button only when the article looks right.
+
+## Batch Draft Queue
+
+When you load multiple `.md` files, xPoster shows a compact pending queue. Each row can be loaded, edited in a popup, copied, or removed. Long Markdown text no longer expands inside the list, so large batches stay manageable.
+
+The **Current draft** card shows the one draft that will be written next. Use **Edit draft** to paste or revise Markdown in a focused popup; background scrolling stays locked while the popup is open.
 
 ## What Markdown Works
 
@@ -119,8 +126,8 @@ scripts/               Local verification scripts
 **I cannot see xPoster in Chrome.**
 Make sure Developer mode is on, click **Load unpacked**, and select the folder that contains `manifest.json`.
 
-**Import is disabled.**
-Load a Markdown draft first, open an X Article tab, then click **Check article**.
+**Write article / Import is disabled.**
+Load or edit a Markdown draft first, open an X Article tab, then click **Check article**.
 
 **Images stay as text.**
 xPoster could not read the image file. For local files, choose the folder that contains the image. For web images, allow the image website when Chrome asks.
