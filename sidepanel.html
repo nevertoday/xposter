@@ -25,7 +25,7 @@
             <span class="step-number">1</span>
             <div>
               <strong>Input Markdown</strong>
-              <span>Paste or drop your draft.</span>
+              <span>Add or drop your draft.</span>
             </div>
           </li>
           <li data-step="import" data-tone="idle">
@@ -42,9 +42,9 @@
         <div>
           <span class="next-action-label">Next step</span>
           <h2 id="nextActionTitle">Load a Markdown draft</h2>
-          <p id="nextActionDetail">Paste Markdown into the draft box, choose a file, or load an example.</p>
+          <p id="nextActionDetail">Add a draft, choose a file, or load an example.</p>
         </div>
-        <button class="secondary next-action-button" id="nextActionButton" type="button">Choose file</button>
+        <button class="secondary next-action-button" id="nextActionButton" type="button">Add draft</button>
       </section>
 
       <section class="assurance-strip" aria-label="Cost, privacy, and control" hidden>
@@ -139,24 +139,18 @@
           </div>
         </div>
         <div class="drop-status" id="draftDropStatus" data-tone="idle" aria-live="polite">
-          <strong data-i18n="Paste or drop Markdown">Paste or drop Markdown</strong>
-          <span data-i18n="MacDown, Obsidian, Typora, or any .md file.">MacDown, Obsidian, Typora, or any .md file.</span>
+          <strong data-i18n="Add or drop Markdown">Add or drop Markdown</strong>
+          <span data-i18n="Use Add draft, choose a file, or drop .md files here.">Use Add draft, choose a file, or drop .md files here.</span>
         </div>
-        <section class="draft-queue" id="draftQueue" aria-label="Pending Markdown queue" data-i18n-aria-label="Pending Markdown queue" hidden>
+        <section class="draft-queue" id="draftQueue" aria-label="Pending Markdown queue" data-i18n-aria-label="Pending Markdown queue">
           <div class="draft-queue-head">
             <div>
-              <strong data-i18n="Pending queue">Pending queue</strong>
-              <span id="draftQueueMeta" data-i18n="Drop multiple Markdown files to queue them here.">Drop multiple Markdown files to queue them here.</span>
+              <strong data-i18n="Pending drafts">Pending drafts</strong>
+              <span id="draftQueueMeta" data-i18n="One list: select a draft, then write it.">One list: select a draft, then write it.</span>
             </div>
+            <button class="secondary compact draft-queue-add" id="addDraft" type="button" data-i18n="Add draft">Add draft</button>
           </div>
           <ol class="draft-queue-list" id="draftQueueList"></ol>
-        </section>
-        <section class="current-draft" id="currentDraftCard" aria-label="Current Markdown draft" data-empty="true">
-          <div>
-            <strong id="currentDraftTitle">No draft selected</strong>
-            <span id="currentDraftMeta">Paste, choose, or drop Markdown to prepare an article.</span>
-          </div>
-          <button class="secondary compact" id="editCurrentDraft" type="button" data-i18n="Edit draft">Edit draft</button>
         </section>
         <textarea id="markdown" spellcheck="false" tabindex="-1" aria-hidden="true"></textarea>
 
@@ -171,7 +165,7 @@
             <button class="secondary" id="openArticles" type="button" data-i18n="Open article">Open article</button>
             <button class="secondary" id="dockCheck" type="button" data-i18n="Check article">Check article</button>
           </div>
-          <p class="import-hint" id="importHint" data-tone="warn" data-i18n="Paste Markdown first.">Paste Markdown first.</p>
+          <p class="import-hint" id="importHint" data-tone="warn" data-i18n="Add Markdown first">Add Markdown first</p>
           <section class="inline-write-status" id="liveProgress" aria-label="Article writing progress" data-tone="idle" hidden>
             <div>
               <strong id="liveProgressTitle">Nothing is running</strong>
@@ -225,9 +219,9 @@
               <span class="runbook-index">1</span>
               <div>
                 <strong>Add your draft</strong>
-                <span>Paste Markdown, choose a file, or use the example to try the workflow.</span>
-              </div>
-              <button class="secondary compact" type="button" data-runbook-action="loadFile">Choose file</button>
+              <span>Add Markdown, choose a file, or use the example to try the workflow.</span>
+            </div>
+              <button class="secondary compact" type="button" data-runbook-action="addDraft">Add draft</button>
             </li>
             <li data-runbook-step="target" data-tone="idle">
               <span class="runbook-index">2</span>
@@ -283,7 +277,7 @@
           <ol class="live-result-list" id="liveResultList">
             <li>
               <label><input type="checkbox" data-live-check="title" /> Title set</label>
-              <span>The title from your current draft.</span>
+              <span>The title from your selected draft.</span>
             </li>
             <li>
               <label><input type="checkbox" data-live-check="text" /> Text formatting</label>
@@ -452,7 +446,7 @@
         </div>
         <div class="preview-note" aria-label="Preview explanation">
           <strong>Preview is the conversion check</strong>
-          <span>The draft box stays as text. This section shows what xPoster recognized before it fills X.</span>
+          <span>The selected draft stays as Markdown. This section shows what xPoster recognized before it fills X.</span>
         </div>
         <div class="preview-body" id="previewBody">
           <p class="empty">This preview shows what xPoster found and what it will move into X.</p>
@@ -555,10 +549,10 @@
               <li data-tone="warn">
                 <span class="issue-source">Draft</span>
               <div>
-                <strong>Load a Markdown draft</strong>
-              <span>Paste a draft, choose a file, or load the example.</span>
+                <strong>Add a Markdown draft</strong>
+              <span>Add a draft, choose a file, or load the example.</span>
             </div>
-                <button class="secondary compact" type="button" data-issue-action="loadFile">Choose file</button>
+                <button class="secondary compact" type="button" data-issue-action="addDraft">Add draft</button>
               </li>
             </ol>
           </section>

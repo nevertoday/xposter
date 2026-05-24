@@ -62,8 +62,7 @@ Open the xPoster side panel from the Chrome toolbar or side panel button.
 
 You should see:
 
-- A current draft card with an **Edit draft** button.
-- A pending queue when multiple Markdown files are loaded.
+- A Pending drafts list with an **Add draft** button.
 - A preview tab.
 - A **Check article** button.
 - A **Write article / Import** button.
@@ -73,13 +72,13 @@ You should see:
 
 Choose one:
 
-- Click **Edit draft** and paste Markdown in the popup.
+- Click **Add draft** and paste Markdown in the popup.
 - Click the file button and select a `.md` file.
 - Click **Example** to load the built-in demo draft.
 
 After the draft is loaded, xPoster previews the structure and shows warnings for anything it cannot handle yet.
 
-If you select or drop multiple Markdown files, xPoster adds them to the pending queue. The queue stays compact: choose a row to make it the current draft, or use that row's edit button to revise the Markdown in a popup. The popup locks the background list so scrolling stays inside the editor.
+If you select or drop multiple Markdown files, xPoster adds them to the same Pending drafts list. Choose a row to select the draft that will be written next, or use that row's edit button to revise Markdown in a popup. The popup locks the background list so scrolling stays inside the editor.
 
 ## 6. Check Before Import
 

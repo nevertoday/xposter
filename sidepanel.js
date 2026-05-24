@@ -63,10 +63,7 @@
     draftQueue: document.getElementById("draftQueue"),
     draftQueueMeta: document.getElementById("draftQueueMeta"),
     draftQueueList: document.getElementById("draftQueueList"),
-    currentDraftCard: document.getElementById("currentDraftCard"),
-    currentDraftTitle: document.getElementById("currentDraftTitle"),
-    currentDraftMeta: document.getElementById("currentDraftMeta"),
-    editCurrentDraft: document.getElementById("editCurrentDraft"),
+    addDraft: document.getElementById("addDraft"),
     clearRecordHistory: document.getElementById("clearRecordHistory"),
     reviewMeta: document.getElementById("reviewMeta"),
     reviewList: document.getElementById("reviewList"),
@@ -307,6 +304,13 @@ console.log("示例代码块");
       "Current Markdown draft": "当前 Markdown 草稿",
       "No draft selected": "未选择草稿",
       "Paste, choose, or drop Markdown to prepare an article.": "粘贴、选择或拖入 Markdown 来准备文章。",
+      "Add or drop Markdown": "添加或拖入 Markdown",
+      "Use Add draft, choose a file, or drop .md files here.": "点击添加草稿、选择文件，或把 .md 文件拖到这里。",
+      "Pending drafts": "待发布草稿",
+      "One list: select a draft, then write it.": "一个列表：选中草稿，然后写入。",
+      "No pending drafts": "暂无待发布草稿",
+      "Add one draft or drop Markdown files here.": "添加一篇草稿，或把 Markdown 文件拖到这里。",
+      "Create draft": "新建草稿",
       "Edit draft": "编辑草稿",
       "Draft actions": "草稿操作",
       "Save draft": "保存草稿",
@@ -325,6 +329,7 @@ console.log("示例代码块");
       "Add your Markdown": "放入 Markdown",
       "Add your draft": "放入草稿",
       "Paste Markdown": "粘贴 Markdown",
+      "Add a draft, choose a .md file, or use Example to try the workflow first.": "添加草稿、选择 .md 文件，或用样例先试一遍流程。",
       "Paste here or choose a .md file.": "在这里粘贴，或选择 .md 文件。",
       "Paste text or choose a Markdown file.": "粘贴文字或选择 Markdown 文件。",
       "Paste text or choose a .md file.": "粘贴文字或选择 .md 文件。",
@@ -332,6 +337,7 @@ console.log("示例代码块");
       "Paste a draft, choose a Markdown file, or load the example.": "粘贴草稿、选择 Markdown 文件，或加载样例。",
       "Input Markdown": "输入 Markdown",
       "Paste or drop your draft.": "粘贴或拖入草稿。",
+      "Add or drop your draft.": "添加或拖入草稿。",
       "Paste Markdown or drop a file here": "粘贴 Markdown 或把文件拖到这里",
       "Write in MacDown, Obsidian, Typora, or any Markdown editor. xPoster writes this draft into the current or new X Article.": "在 MacDown、Obsidian、Typora 或任何 Markdown 编辑器里写完，再让 xPoster 写入当前或新建的 X 文章。",
       "Write article": "写入文章",
@@ -428,7 +434,7 @@ console.log("示例代码块");
       "Use Preview to see what xPoster found. Imported images appear in X after Allow image website, Check downloads, and Import.": "在预览里查看 xPoster 识别到的内容。写入时，能下载的网页图片会上传到 X；失败的图片会保留链接。",
       "If image links still look like Markdown here, that is normal. xPoster converts them during Import, not inside this text box.": "如果图片链接在这里仍然像 Markdown 语法，这是正常的。xPoster 会在导入时转换它们，不会在这个输入框里转换。",
       "Drop Markdown here": "拖拽上传",
-      "Release to load it into the article draft": "松开后载入草稿",
+      "Release to load it into the article draft": "松开后加入待发布草稿",
       "Release to load Markdown": "松开即可载入 Markdown",
       "Release to load": "松开载入",
       "Drop cancelled": "已取消拖拽",
@@ -436,14 +442,16 @@ console.log("示例代码块");
       "Markdown loaded": "草稿就绪",
       "Could not load Markdown": "无法载入 Markdown",
       "Ready for Markdown": "等待 Markdown",
-      "Paste or drop Markdown": "粘贴或拖入 Markdown",
+      "Paste or drop Markdown": "添加或拖入 Markdown",
       "MacDown, Obsidian, Typora, or any .md file.": "支持 MacDown、Obsidian、Typora 或 .md 文件。",
       "Drop a .md file or paste text into the editor below.": "拖入 .md 文件，或把文本粘贴到下面的编辑框。",
       "Paste text or choose a .md file.": "粘贴文本，或选择 .md 文件。",
-      "Release the file here. xPoster will load it into the draft box, not publish it.": "在这里松开文件。xPoster 会把它载入草稿框，不会发布。",
+      "Release the file here. xPoster will load it into the draft box, not publish it.": "在这里松开文件。xPoster 会把它加入待发布草稿，不会发布。",
+      "Release to add it to Pending.": "松开后加入待发布草稿。",
       "Release to load it here.": "松开后载入这里。",
       "Loaded": "已载入",
-      "Loading the dropped content into the draft box.": "正在把拖入内容载入草稿框。",
+      "Loading the dropped content into the draft box.": "正在把拖入内容加入待发布草稿。",
+      "Adding the dropped content to Pending.": "正在把拖入内容加入待发布草稿。",
       "characters. Review it, then click Write article.": "个字符。检查后点击写入文章。",
       "That drop did not include Markdown text or a .md file.": "这次拖入没有包含 Markdown 文本或 .md 文件。",
       "Try a .md, .markdown, .txt file, or plain Markdown text.": "请拖入 .md、.markdown、.txt 文件，或普通 Markdown 文本。",
@@ -511,13 +519,14 @@ console.log("示例代码块");
       "Add a Markdown draft": "放入 Markdown 草稿",
       "Choose file": "选择文件",
       "Paste Markdown into the draft editor, choose a file, or load the smoke fixture.": "将 Markdown 粘贴到草稿编辑器、选择文件，或加载烟测草稿。",
-      "Paste Markdown into the draft box, choose a file, or load an example.": "将 Markdown 粘贴到草稿框、选择文件，或加载样例。",
+      "Paste Markdown into the draft box, choose a file, or load an example.": "添加 Markdown 草稿、选择文件，或加载样例。",
+      "Add a draft, choose a file, or load an example.": "添加草稿、选择文件，或加载样例。",
       "Paste a Markdown draft or choose a file. xPoster will preview it before anything is written to X.": "粘贴 Markdown 草稿或选择文件。xPoster 会先预览，不会立刻写入 X。",
       "Paste a draft or choose a .md file. xPoster previews it first and does not write to X yet.": "粘贴草稿或选择 .md 文件。xPoster 会先预览，此时不会写入 X。",
       "Paste your Markdown or choose a .md file. xPoster will preview the draft before touching X.": "粘贴 Markdown 或选择 .md 文件。xPoster 会先预览草稿，不会立刻操作 X。",
       "Paste your Markdown in the box, or choose a .md file. Use Example only if you want to try the workflow first.": "把 Markdown 粘贴到草稿框，或选择 .md 文件。只想先试用流程时，再点样例。",
       "Paste your Markdown in the box, choose a .md file, or use Example to try the workflow first.": "把 Markdown 粘贴到草稿框、选择 .md 文件，或用样例先试一遍流程。",
-      "Paste your Markdown in the draft box, choose a .md file, or use Example to try the workflow first.": "把 Markdown 粘贴到草稿框、选择 .md 文件，或用样例先试一遍流程。",
+      "Paste your Markdown in the draft box, choose a .md file, or use Example to try the workflow first.": "添加 Markdown 草稿、选择 .md 文件，或用样例先试一遍流程。",
       "# Article title\n\nPaste your Markdown here. xPoster will preview text and images, then show the next step.": "# 文章标题\n\n把 Markdown 粘贴到这里。xPoster 会预览文字和图片，然后显示下一步。",
       "Paste Markdown, choose a file, or load the example draft.": "粘贴 Markdown、选择文件，或加载样例草稿。",
       "Load Smoke": "加载烟测",
@@ -621,14 +630,17 @@ console.log("示例代码块");
       "No X Article is open yet.": "尚未打开 X 文章。",
       "Load the example or paste Markdown before checking X.": "检查 X 前先加载样例或粘贴 Markdown。",
       "Load the example or paste a Markdown draft before checking X.": "检查 X 前先加载样例或粘贴 Markdown 草稿。",
+      "Add a draft or load the example before checking X.": "检查 X 前先添加草稿或加载样例。",
       "Load xPoster as an unpacked extension in Chrome.": "在 Chrome 中加载 xPoster 解包扩展。",
       "Load xPoster as an unpacked extension in signed-in Chrome.": "在已登录的 Chrome 中加载 xPoster 解包扩展。",
       "Confirm this xPoster copy is loaded in the signed-in Chrome profile.": "确认这个 xPoster 已加载到已登录的 Chrome 配置中。",
       "Open X Articles in the active tab.": "在当前标签页打开 X 文章。",
       "Paste Markdown, choose a file, or use the example to try the workflow.": "粘贴 Markdown、选择文件，或使用样例体验流程。",
+      "Add Markdown, choose a file, or use the example to try the workflow.": "添加 Markdown、选择文件，或使用样例体验流程。",
+      "Add a draft, choose a file, or load the example.": "添加草稿、选择文件，或加载样例。",
       "X can still open a Markdown file when needed.": "需要时，X 仍可打开 Markdown 文件。",
       "The article body is not ready yet.": "文章正文尚未准备好。",
-      "This is a recognition preview. Image links stay as text in the draft box; xPoster downloads public images during Write and keeps failed downloads as links.": "这是识别预览。图片链接会留在草稿框中；写入时 xPoster 会下载公开图片，失败的图片保留为链接。",
+      "This is a recognition preview. Image links stay as text in the draft box; xPoster downloads public images during Write and keeps failed downloads as links.": "这是识别预览。图片链接会作为 Markdown 保留；写入时 xPoster 会下载公开图片，失败的图片保留为链接。",
       "Each part of the draft will show whether it becomes text, an image, the title, the cover, or an embed.": "草稿的每一部分都会显示将变成正文、图片、标题、封面还是嵌入内容。",
       "Finish the X Article review before calling this import done.": "完成 X 文章检查后，再确认本次写入完成。",
       "Post-import review": "导入后检查",
@@ -711,8 +723,13 @@ console.log("示例代码块");
       "Typed draft": "手写草稿",
       "Queued draft": "待发布草稿",
       "Pending queue": "待发布队列",
+      "Pending drafts": "待发布草稿",
       "Pending Markdown queue": "待发布 Markdown 队列",
       "Drop multiple Markdown files to queue them here.": "拖入多篇 Markdown 后会先放在这里。",
+      "One list: select a draft, then write it.": "一个列表：选中草稿，然后写入。",
+      "No pending drafts": "暂无待发布草稿",
+      "Add one draft or drop Markdown files here.": "添加一篇草稿，或把 Markdown 文件拖到这里。",
+      "Create draft": "新建草稿",
       "Load this draft": "载入这篇草稿",
       "Remove from queue": "从队列移除",
       Current: "当前",
@@ -754,6 +771,7 @@ console.log("示例代码块");
       "Publish records cleared.": "记录已清空。",
       "Records cleared.": "记录已清空。",
       "Markdown draft": "Markdown 草稿",
+      "Paste Markdown here, then save it to Pending.": "在这里粘贴 Markdown，然后保存到待发布草稿。",
       "Choose Markdown file": "选择 Markdown 文件",
       "Load live smoke fixture": "加载实时烟测草稿",
       "Load the live verification fixture": "加载实时验证草稿",
@@ -895,8 +913,9 @@ console.log("示例代码块");
       "The preview focuses on publishing structure: headings, media, tables, code, tweet embeds, and the final import plan.": "预览聚焦发布结构：标题、媒体、表格、代码、推文嵌入和最终导入计划。",
       "This preview shows what xPoster found and what it will move into X.": "这里会显示 xPoster 识别到什么，以及会把什么搬进 X。",
       "Preview is the conversion check": "预览是转换检查",
-      "The draft box stays as text. This section shows what xPoster recognized before it fills X.": "草稿框会一直保持文字。这里显示 xPoster 在填入 X 前识别到了什么。",
-      "This is a recognition preview. Image links are still text in the draft box, but xPoster will upload them into X after the image website is allowed and downloads pass.": "这是识别预览。图片链接在草稿框里仍是文字；写入时可下载的图片会上传进 X。",
+      "The draft box stays as text. This section shows what xPoster recognized before it fills X.": "草稿仍以 Markdown 保存。这里显示 xPoster 在填入 X 前识别到了什么。",
+      "The selected draft stays as Markdown. This section shows what xPoster recognized before it fills X.": "选中的草稿仍以 Markdown 保存。这里显示 xPoster 在填入 X 前识别到了什么。",
+      "This is a recognition preview. Image links are still text in the draft box, but xPoster will upload them into X after the image website is allowed and downloads pass.": "这是识别预览。图片链接仍以 Markdown 保存；写入时可下载的图片会上传进 X。",
       "image links convert during Import": "图片链接会在导入时转换",
       "Import plan": "导入计划",
       "What xPoster will do": "xPoster 会做什么",
@@ -1126,7 +1145,9 @@ console.log("示例代码块");
       "Uses the current X Article if one is open. Otherwise xPoster creates a new one.": "如果当前已经打开 X 文章，就写入当前文章；否则 xPoster 会新建一篇。",
       "Uses current X Article, or creates one.": "使用当前 X 文章，或新建一篇。",
       "Paste Markdown first.": "请先粘贴 Markdown。",
-      "Paste or drop Markdown into the editor above.": "把 Markdown 粘贴或拖入上方编辑框。",
+      "Add Markdown first": "先放入 Markdown",
+      "Paste or drop Markdown into the editor above.": "先添加或拖入 Markdown 草稿。",
+      "Add a Markdown draft first.": "请先添加 Markdown 草稿。",
       "Writing into X. You can watch the final result in the X Article tab.": "正在写入 X。可以在 X 文章标签页查看结果。",
       "Writing...": "正在写入...",
       "Writing article started.": "开始写入文章。",
@@ -1275,8 +1296,8 @@ console.log("示例代码块");
       "Record the final X Article result after import.": "导入后记录最终 X 文章结果。",
       Reset: "重置",
       "Title set": "标题已设置",
-      "xPoster live smoke test or the current draft title.": "xPoster 实时烟测标题或当前草稿标题。",
-      "The title from your current draft.": "当前草稿里的标题。",
+      "xPoster live smoke test or the selected draft title.": "xPoster 实时烟测标题或选中草稿标题。",
+      "The title from your selected draft.": "选中草稿里的标题。",
       "Text formatting": "文本格式",
       "Heading 1": "一级标题",
       "Heading 2": "二级标题",
@@ -2403,7 +2424,7 @@ console.log("示例代码块");
   function queueSummaryText() {
     const total = draftQueue.length;
     const written = draftQueue.filter((item) => item.status === "written").length;
-    if (!total) return "Drop multiple Markdown files to queue them here.";
+    if (!total) return "One list: select a draft, then write it.";
     return `${total} draft${total === 1 ? "" : "s"}, ${written} written`;
   }
 
@@ -2413,51 +2434,56 @@ console.log("示例代码块");
     return "Queued";
   }
 
-  function currentDraftTitle() {
-    const activeItem = draftQueue.find((item) => item.id === activeQueueItemId);
-    if (activeItem && activeItem.markdown === els.markdown.value) return activeItem.title || activeItem.fileName || "Untitled Markdown";
-    return latestParsed?.title || markdownQueueTitle(els.markdown.value || "", "Markdown draft");
+  function createQueueItemFromMarkdown(markdown, { fileName = "", source = "typed", id = queueItemId("queue-draft") } = {}) {
+    const text = String(markdown || "");
+    return normalizeQueueItem({
+      id,
+      fileName,
+      title: markdownQueueTitle(text, fileName || "Untitled Markdown"),
+      markdown: text,
+      characters: text.length,
+      addedAt: new Date().toISOString(),
+      source
+    });
   }
 
-  function currentDraftMeta() {
-    const markdown = els.markdown.value || "";
-    if (!markdown.trim()) return "Paste, choose, or drop Markdown to prepare an article.";
-    const activeItem = draftQueue.find((item) => item.id === activeQueueItemId);
-    const source = activeItem?.fileName || (activeItem ? "Queued draft" : "Draft");
-    const counts = latestCounts || shared.segmentCounts(latestParsed?.segments || []);
-    const contentParts = [
-      `${Number(markdown.length).toLocaleString()} chars`,
-      counts.text ? `${counts.text} text` : "",
-      counts.image ? `${counts.image} image${counts.image === 1 ? "" : "s"}` : "",
-      counts.table ? `${counts.table} table${counts.table === 1 ? "" : "s"}` : ""
-    ].filter(Boolean);
-    return [source, contentParts.join(", ")].filter(Boolean).join(" · ");
-  }
-
-  function updateCurrentDraftCard() {
-    if (!els.currentDraftCard) return;
-    const markdown = els.markdown.value || "";
-    const hasDraft = Boolean(markdown.trim());
-    els.currentDraftCard.dataset.empty = hasDraft ? "false" : "true";
-    if (els.currentDraftTitle) {
-      delete els.currentDraftTitle.dataset.i18n;
-      els.currentDraftTitle.textContent = hasDraft ? currentDraftTitle() : localizeText("No draft selected");
+  function addDraftToQueue(markdown, { fileName = "", source = "typed", activate = true, statusTitle = "Markdown loaded", logMessage = "", remember = true } = {}) {
+    const item = createQueueItemFromMarkdown(markdown, { fileName, source });
+    if (!item) {
+      setDraftDropStatus("Could not load Markdown", "Try a .md, .markdown, .txt file, or plain Markdown text.", "error");
+      return null;
     }
-    if (els.currentDraftMeta) {
-      delete els.currentDraftMeta.dataset.i18n;
-      els.currentDraftMeta.textContent = hasDraft ? currentDraftMeta() : localizeText("Paste, choose, or drop Markdown to prepare an article.");
+    if (queueItemStorageSize(item) > MAX_DRAFT_QUEUE_ITEM_BYTES) {
+      setDraftDropStatus("Could not load Markdown", queueDraftTooLargeDetail(), "error");
+      log(queueDraftTooLargeDetail());
+      return null;
     }
-    if (els.editCurrentDraft) els.editCurrentDraft.disabled = false;
+    draftQueue = [...draftQueue.filter((entry) => `${entry.fileName}\n${entry.markdown}` !== `${item.fileName}\n${item.markdown}`), item].slice(-MAX_DRAFT_QUEUE);
+    persistDraftQueue();
+    if (activate) {
+      loadQueueItem(item.id, { remember });
+    } else {
+      renderDraftQueue();
+    }
+    if (statusTitle) setDraftDropStatus(statusTitle, draftReadyDetail(item.markdown.length), "done");
+    if (logMessage) log(logMessage);
+    return item;
   }
 
   function renderDraftQueue() {
     if (!els.draftQueue || !els.draftQueueList) return;
     const hasQueue = draftQueue.length > 0;
-    els.draftQueue.hidden = !hasQueue;
+    els.draftQueue.hidden = false;
     if (els.draftQueueMeta) els.draftQueueMeta.textContent = queueSummaryText();
     if (!hasQueue) {
-      els.draftQueueList.innerHTML = "";
-      updateCurrentDraftCard();
+      els.draftQueueList.innerHTML = `
+        <li class="draft-queue-empty">
+          <strong>${shared.escapeHtml(localizeText("No pending drafts"))}</strong>
+          <span>${shared.escapeHtml(localizeText("Add one draft or drop Markdown files here."))}</span>
+          <button class="secondary compact" type="button" data-queue-action="new">${shared.escapeHtml(localizeText("Add draft"))}</button>
+        </li>
+      `;
+      translateDynamicDom(els.draftQueue);
       return;
     }
     const safe = shared.escapeHtml;
@@ -2483,7 +2509,6 @@ console.log("示例代码块");
       </li>
     `).join("");
     translateDynamicDom(els.draftQueue);
-    updateCurrentDraftCard();
   }
 
   async function restoreDraftQueue() {
@@ -2522,6 +2547,10 @@ console.log("示例代码块");
   async function handleDraftQueueClick(event) {
     const button = event.target.closest("[data-queue-action]");
     if (!button) return;
+    if (button.dataset.queueAction === "new") {
+      openNewDraftEditor();
+      return;
+    }
     const id = button.dataset.queueId || button.closest("[data-queue-id]")?.dataset.queueId;
     if (!id) return;
     if (button.dataset.queueAction === "load") {
@@ -2547,7 +2576,7 @@ console.log("示例代码块");
     }
   }
 
-  function loadQueueItem(id, { persist = true } = {}) {
+  function loadQueueItem(id, { persist = true, remember = true } = {}) {
     const item = draftQueue.find((entry) => entry.id === id);
     if (!item) return false;
     activeQueueItemId = item.id;
@@ -2559,28 +2588,42 @@ console.log("示例代码块");
     els.markdown.value = item.markdown;
     saveDraft();
     analyzeDraft();
-    rememberDraftHistory("queue", {
-      forceNew: true,
-      fileName: item.fileName,
-      size: item.characters,
-      queueItemId: item.id
-    });
+    if (remember) {
+      rememberDraftHistory(item.source || "queue", {
+        forceNew: true,
+        fileName: item.fileName,
+        size: item.characters,
+        queueItemId: item.id
+      });
+    }
     setDraftDropStatus("Markdown loaded", draftReadyDetail(item.markdown.length), "done");
     acknowledgeDraftInput();
     if (persist) persistDraftQueue();
     renderDraftQueue();
     updateWriteButton();
-    updateCurrentDraftCard();
     return true;
   }
 
   function removeQueueItem(id) {
     const wasActive = id === activeQueueItemId;
+    const removedIndex = draftQueue.findIndex((item) => item.id === id);
     draftQueue = draftQueue.filter((item) => item.id !== id);
-    if (wasActive) activeQueueItemId = null;
+    if (wasActive) {
+      activeQueueItemId = null;
+      const nextItem = draftQueue[Math.max(0, Math.min(removedIndex, draftQueue.length - 1))] || null;
+      if (nextItem) {
+        loadQueueItem(nextItem.id, { persist: false });
+      } else {
+        suppressNextTypedHistory = true;
+        window.clearTimeout(draftInputHistoryTimer);
+        els.markdown.value = "";
+        saveDraft();
+        analyzeDraft();
+        updateWriteButton();
+      }
+    }
     persistDraftQueue();
     renderDraftQueue();
-    if (wasActive) updateCurrentDraftCard();
   }
 
   function markActiveQueueItemWritten() {
@@ -2615,7 +2658,7 @@ console.log("示例代码块");
       els.markdown.value = text;
       saveDraft();
       analyzeDraft();
-      rememberDraftHistory("queue", {
+      rememberDraftHistory(updated.source || "queue", {
         forceNew: true,
         fileName: updated.fileName,
         size: updated.characters,
@@ -2628,35 +2671,6 @@ console.log("示例代码块");
     renderDraftQueue();
     updateWriteButton();
     return true;
-  }
-
-  function writeDraftMarkdown(markdown, { source = "typed", fileName = null, forceNew = true, queueItemId = null, statusTitle = "Markdown loaded", remember = true } = {}) {
-    const text = String(markdown || "");
-    suppressNextTypedHistory = true;
-    window.clearTimeout(draftInputHistoryTimer);
-    els.markdown.value = text;
-    saveDraft();
-    analyzeDraft();
-    syncActiveQueueWithDraft();
-    if (text.trim()) {
-      if (remember) {
-        rememberDraftHistory(source, {
-          forceNew,
-          fileName,
-          size: text.length,
-          queueItemId
-        });
-      }
-      setDraftDropStatus(statusTitle, draftReadyDetail(text.length), "done");
-      acknowledgeDraftInput();
-    }
-    updateCurrentDraftCard();
-    updateWriteButton();
-  }
-
-  function setDraftMarkdown(markdown, { source = "typed", fileName = null, forceNew = true, queueItemId = null, statusTitle = "Markdown loaded", logMessage = "" } = {}) {
-    writeDraftMarkdown(markdown, { source, fileName, forceNew, queueItemId, statusTitle });
-    if (logMessage) log(logMessage);
   }
 
   function setMarkdownEditorOpen(open) {
@@ -2676,7 +2690,7 @@ console.log("示例代码块");
     }
     els.recordEditTextarea.dataset.editorMode = mode;
     els.recordEditTextarea.dataset.recordId = mode === "record" ? id : "";
-    els.recordEditTextarea.dataset.queueId = mode === "queue" ? id : "";
+    els.recordEditTextarea.dataset.queueId = mode === "queue" || mode === "new" ? id : "";
     els.recordEditTextarea.value = value;
     setMarkdownEditorOpen(true);
     translateDynamicDom(els.recordEditSheet);
@@ -2783,8 +2797,7 @@ console.log("示例代码块");
       updatePreflight();
       updateWriteButton();
       updateProgressiveSections();
-      setDraftDropStatus("Paste or drop Markdown", "Paste text or choose a .md file.", "idle");
-      updateCurrentDraftCard();
+      setDraftDropStatus("Add or drop Markdown", "Use Add draft, choose a file, or drop .md files here.", "idle");
       return;
     }
     try {
@@ -2809,11 +2822,9 @@ console.log("示例代码块");
       updateWriteButton();
       updateProgressiveSections();
       setDraftDropStatus("Markdown loaded", draftReadyDetail(markdown.length, counts), "done");
-      updateCurrentDraftCard();
     } catch (error) {
       log(`Could not analyze draft: ${error?.message || error}`);
       setDraftDropStatus("Could not load Markdown", error?.message || "Try a .md, .markdown, .txt file, or plain Markdown text.", "error");
-      updateCurrentDraftCard();
     }
   }
 
@@ -3477,8 +3488,8 @@ console.log("示例代码块");
   function focusMarkdownInput() {
     showWorkspacePanel("draft");
     setActiveJump("draft");
-    scrollTargetIntoView(els.markdown || els.draftPanel, "center");
-    window.setTimeout(() => els.markdown?.focus?.(), 0);
+    scrollTargetIntoView(els.draftQueue || els.draftPanel, "center");
+    window.setTimeout(() => openNewDraftEditor(), 0);
   }
 
   function runImportButtonAction() {
@@ -3487,7 +3498,7 @@ console.log("示例代码块");
     const action = primaryImportAction(gate);
     if (action.action === "import") return importDraft();
     focusMarkdownInput();
-    setDraftDropStatus("Paste or drop Markdown", "Paste or drop Markdown into the editor above.", "idle");
+    setDraftDropStatus("Add or drop Markdown", "Use Add draft, choose a file, or drop .md files here.", "idle");
     return null;
   }
 
@@ -3541,7 +3552,7 @@ console.log("示例代码块");
 
   function compactWriteHint({ hasDraft, busy = false } = {}) {
     if (busy) return { tone: "ready", text: "Writing into X. You can watch the final result in the X Article tab." };
-    if (!hasDraft) return { tone: "idle", text: "Paste or drop Markdown into the editor above." };
+    if (!hasDraft) return { tone: "idle", text: "Add a Markdown draft first." };
     const remoteCount = remoteHttpImageSegments(latestParsed).length;
     if (remoteCount) return remoteImageWriteHint(remoteCount);
     const imageCount = latestCounts?.image || 0;
@@ -3598,9 +3609,9 @@ console.log("示例代码块");
       return {
         tone: "warn",
         title: "Add a Markdown draft",
-        detail: "Paste your Markdown in the draft box, choose a .md file, or use Example to try the workflow first.",
-        button: "Choose file",
-        action: "loadFile"
+        detail: "Add a draft, choose a .md file, or use Example to try the workflow first.",
+        button: "Add draft",
+        action: "addDraft"
       };
     }
     if (byId.get("target")?.tone !== "ok") {
@@ -3718,7 +3729,7 @@ console.log("示例代码块");
         title: "Input Markdown",
         detail: hasDraft
           ? "Markdown ready."
-          : "Paste or drop your draft."
+          : "Add or drop your draft."
       },
       {
         id: "import",
@@ -3730,7 +3741,7 @@ console.log("示例代码块");
             ? "Written. Review and publish in X."
             : hasDraft
               ? "Use the current X Article or create one."
-              : "Paste Markdown first."
+              : "Add Markdown first."
       }
     ];
 
@@ -3926,7 +3937,7 @@ console.log("示例代码块");
 
   function issueFromCheck(check) {
     const actions = {
-      draft: { action: "loadFile", button: "Choose file" },
+      draft: { action: "addDraft", button: "Add draft" },
       target: { action: "openArticles", button: "Open" },
       "page-script": { action: "refreshXTab", button: "Refresh X" },
       "target-lock": { action: "check", button: "Check article" },
@@ -4145,7 +4156,7 @@ console.log("示例代码块");
         tone: hasDraft ? "ok" : "warn",
         detail: hasDraft
           ? `${latestParsed.segments.length} parts loaded; ${latestParsed.title ? "title detected" : "title missing"}.`
-          : "Load the example or paste a Markdown draft before checking X."
+          : "Add a draft or load the example before checking X."
       },
       {
         id: "target",
@@ -4993,7 +5004,7 @@ console.log("示例代码块");
         detail: gate.message,
         action:
           byId.get("draft")?.tone !== "ok"
-            ? "loadFile"
+            ? "addDraft"
           : byId.get("target")?.tone !== "ok"
             ? "openArticles"
             : byId.get("page-script")?.tone !== "ok"
@@ -5001,7 +5012,7 @@ console.log("示例代码块");
             : "check",
         button:
           byId.get("draft")?.tone !== "ok"
-            ? "Choose file"
+            ? "Add draft"
             : byId.get("target")?.tone !== "ok"
               ? "Open"
             : byId.get("page-script")?.tone !== "ok"
@@ -5494,7 +5505,7 @@ console.log("示例代码块");
       const markdownFiles = files.filter((file) => /\.(md|markdown|mdown|mkd|txt)$/i.test(file.name || ""));
       if (markdownFiles.length > 1) {
         const added = addDraftQueueItems(await filesToQueueItems(markdownFiles), {
-          activateFirst: !els.markdown.value.trim(),
+          activateFirst: true,
           source: "file"
         });
         if (added.length) {
@@ -5521,17 +5532,14 @@ console.log("示例代码块");
       return;
     }
     try {
-      setDraftDropStatus("Reading Markdown...", `Loading ${file.name} into the draft box.`, "ready");
+      setDraftDropStatus("Reading Markdown...", `Adding ${file.name} to Pending.`, "ready");
       const text = await file.text();
-      els.markdown.value = text;
-      saveDraft();
-      analyzeDraft();
-      syncActiveQueueWithDraft();
-      rememberDraftHistory(source, { fileName: file.name, size: file.size, forceNew: true });
-      setDraftDropStatus("Markdown loaded", draftReadyDetail(text.length), "done");
-      acknowledgeDraftInput();
-      log(`Loaded ${file.name}.`);
-      updateWriteButton();
+      const item = addDraftToQueue(text, {
+        fileName: file.name,
+        source,
+        statusTitle: "Markdown loaded"
+      });
+      if (item) log(`Loaded ${file.name}.`);
     } catch (error) {
       const detail = error?.message || "Try a .md, .markdown, .txt file, or plain Markdown text.";
       setDraftDropStatus("Could not load Markdown", detail, "error");
@@ -5574,7 +5582,7 @@ console.log("示例代码块");
       els.draftPanel.dataset.dropLabel = localizeText("Drop Markdown here");
       els.draftPanel.dataset.dropHint = localizeText("Release to load");
       els.draftPanel.classList.add("drag-active");
-      setDraftDropStatus("Drop Markdown here", "Release to load it into the article draft", "ready");
+      setDraftDropStatus("Drop Markdown here", "Release to add it to Pending.", "ready");
     };
     const deactivateDropzone = () => {
       els.draftPanel.classList.remove("drag-active");
@@ -5634,11 +5642,11 @@ console.log("示例代码块");
       }
       dragDepth = 0;
       deactivateDropzone();
-      setDraftDropStatus("Reading Markdown...", "Loading the dropped content into the draft box.", "ready");
+      setDraftDropStatus("Reading Markdown...", "Adding the dropped content to Pending.", "ready");
       const markdownFiles = Array.from(event.dataTransfer.files || []).filter((item) => /\.(md|markdown|mdown|mkd|txt)$/i.test(item.name || ""));
       if (markdownFiles.length > 1) {
         const added = addDraftQueueItems(await filesToQueueItems(markdownFiles), {
-          activateFirst: !els.markdown.value.trim(),
+          activateFirst: true,
           source: "drop-file"
         });
         if (added.length) {
@@ -5653,13 +5661,11 @@ console.log("示例代码块");
       } else {
         const text = markdownTextFromTransfer(event.dataTransfer);
         if (text) {
-          els.markdown.value = text;
-          saveDraft();
-          analyzeDraft();
-          syncActiveQueueWithDraft();
-          rememberDraftHistory("drop", { forceNew: true });
-          acknowledgeDraftInput();
-          log("Loaded dragged Markdown.");
+          addDraftToQueue(text, {
+            source: "drop",
+            statusTitle: "Markdown loaded",
+            logMessage: "Loaded dragged Markdown."
+          });
         } else {
           setDraftDropStatus("Could not load Markdown", "That drop did not include Markdown text or a .md file.", "error");
         }
@@ -5669,13 +5675,12 @@ console.log("示例代码块");
   }
 
   async function loadSmokeFixture() {
-    els.markdown.value = currentLanguage === "zh" ? EXAMPLE_DRAFT_ZH : EXAMPLE_DRAFT;
-    log("Loaded example Markdown draft.");
-    saveDraft();
-    analyzeDraft();
-    syncActiveQueueWithDraft();
-    rememberDraftHistory("example", { forceNew: true });
-    acknowledgeDraftInput();
+    addDraftToQueue(currentLanguage === "zh" ? EXAMPLE_DRAFT_ZH : EXAMPLE_DRAFT, {
+      fileName: "example.md",
+      source: "example",
+      statusTitle: "Markdown loaded",
+      logMessage: "Loaded example Markdown draft."
+    });
   }
 
   async function chooseVault() {
@@ -5710,7 +5715,30 @@ console.log("示例代码块");
       return;
     }
     const stored = await chrome.storage.local.get(STORAGE_DRAFT);
-    els.markdown.value = stored[STORAGE_DRAFT] || "";
+    const restored = String(stored[STORAGE_DRAFT] || "");
+    if (activeQueueItemId) {
+      const activeItem = draftQueue.find((item) => item.id === activeQueueItemId);
+      els.markdown.value = activeItem?.markdown || "";
+      analyzeDraft();
+      return;
+    }
+    if (draftQueue.length) {
+      const restoredItem = restored.trim()
+        ? draftQueue.find((item) => item.markdown === restored)
+        : null;
+      loadQueueItem((restoredItem || draftQueue[0]).id, { remember: false });
+      return;
+    }
+    if (!draftQueue.length && restored.trim()) {
+      addDraftToQueue(restored, {
+        source: "restored",
+        statusTitle: "Markdown loaded",
+        logMessage: "",
+        remember: false
+      });
+      return;
+    }
+    els.markdown.value = "";
     analyzeDraft();
   }
 
@@ -5721,13 +5749,14 @@ console.log("示例代码块");
       if (changes[STORAGE_DRAFT]) {
         const nextDraft = String(changes[STORAGE_DRAFT].newValue || "");
         if (nextDraft !== els.markdown.value) {
-          els.markdown.value = nextDraft;
-          analyzeDraft();
-          syncActiveQueueWithDraft();
-          rememberDraftHistory("restored", { forceNew: true });
+          const item = addDraftToQueue(nextDraft, {
+            source: "restored",
+            statusTitle: "Markdown loaded",
+            logMessage: ""
+          });
+          if (!item) return;
           showWorkspacePanel("draft");
           setDraftDropStatus("Markdown loaded", draftReadyDetail(nextDraft.length), "done");
-          acknowledgeDraftInput();
           log("Markdown draft loaded from the X Article tab.");
         }
       }
@@ -6409,17 +6438,19 @@ console.log("示例代码块");
       log("Markdown snapshot not available.");
       return;
     }
-    writeDraftMarkdown(markdown, {
+    const item = addDraftToQueue(markdown, {
       source: "restored",
       fileName: record?.source?.fileName || null,
-      forceNew: true,
       statusTitle: "Markdown restored",
+      logMessage: "",
       remember: false
     });
+    if (!item) return;
     rememberDraftHistory("restored", {
       forceNew: true,
       sourceRecordId: record?.id || null,
       fileName: record?.source?.fileName || null,
+      queueItemId: item.id,
       size: markdown.length
     });
     showWorkspacePanel("draft");
@@ -6478,15 +6509,14 @@ console.log("示例代码块");
     syncRecordEditSheet();
   }
 
-  function openCurrentDraftEditor() {
-    const markdown = els.markdown.value || "";
+  function openNewDraftEditor() {
     configureMarkdownEditor({
-      title: markdown.trim() ? currentDraftTitle() : "Markdown draft",
-      meta: markdown.trim() ? currentDraftMeta() : "Paste, choose, or drop Markdown to prepare an article.",
-      value: markdown,
+      title: "Markdown draft",
+      meta: "Paste Markdown here, then save it to Pending.",
+      value: "",
       primaryLabel: "Save draft",
-      mode: "current",
-      id: activeQueueItemId || ""
+      mode: "new",
+      id: ""
     });
   }
 
@@ -6530,7 +6560,11 @@ console.log("示例代码块");
       log("Markdown snapshot not available.");
       return;
     }
-    const editor = activeDraftEditor || { mode: els.recordEditTextarea?.dataset.editorMode, id: els.recordEditTextarea?.dataset.recordId };
+    const fallbackMode = els.recordEditTextarea?.dataset.editorMode || "";
+    const fallbackId = fallbackMode === "queue"
+      ? els.recordEditTextarea?.dataset.queueId
+      : els.recordEditTextarea?.dataset.recordId;
+    const editor = activeDraftEditor || { mode: fallbackMode, id: fallbackId };
     if (editor.mode === "record") {
       const record = currentRecord(editor.id || activeRecordEditorId);
       restoreRecordMarkdownText(record, edited, "Edited Markdown restored to Pending.");
@@ -6538,16 +6572,11 @@ console.log("示例代码块");
       updateQueueItemMarkdown(editor.id, edited);
       log("Queued Markdown updated.");
     } else {
-      if (activeQueueItemId) {
-        updateQueueItemMarkdown(activeQueueItemId, edited);
-        log("Markdown draft updated.");
-      } else {
-        setDraftMarkdown(edited, {
-          source: "typed",
-          statusTitle: "Markdown updated",
-          logMessage: "Markdown draft updated."
-        });
-      }
+      addDraftToQueue(edited, {
+        source: "typed",
+        statusTitle: "Markdown updated",
+        logMessage: "Markdown draft updated."
+      });
     }
     closeMarkdownEditor();
   }
@@ -6748,7 +6777,7 @@ console.log("示例代码块");
         tone: draftReady ? "ok" : "error",
         detail: draftReady
           ? `${latestParsed?.segments?.length || 0} publishable block(s) loaded.`
-          : "Load the example or paste Markdown before checking X."
+          : "Add a draft or load the example before checking X."
       },
       {
         id: "target",
@@ -6917,6 +6946,9 @@ console.log("示例代码块");
 
   async function runNextAction() {
     switch (currentNextAction?.action) {
+      case "addDraft":
+        openNewDraftEditor();
+        break;
       case "loadSmoke":
         await loadSmokeFixture();
         break;
@@ -6957,6 +6989,9 @@ console.log("示例代码块");
 
   async function runRunbookAction(action) {
     switch (action) {
+      case "addDraft":
+        openNewDraftEditor();
+        break;
       case "loadSmoke":
         await loadSmokeFixture();
         break;
@@ -7035,10 +7070,14 @@ console.log("示例代码块");
   els.loadFile.addEventListener("click", loadFile);
   els.loadSmoke?.addEventListener("click", loadSmokeFixture);
   els.clearDraft.addEventListener("click", () => {
-    els.markdown.value = "";
-    saveDraft();
-    analyzeDraft();
-    syncActiveQueueWithDraft();
+    if (activeQueueItemId) {
+      removeQueueItem(activeQueueItemId);
+    } else {
+      els.markdown.value = "";
+      saveDraft();
+      analyzeDraft();
+      syncActiveQueueWithDraft();
+    }
     log("Draft cleared.");
   });
   els.pickVault.addEventListener("click", chooseVault);
@@ -7059,7 +7098,7 @@ console.log("示例代码块");
   els.recordHistory?.addEventListener("click", handleRecordHistoryClick);
   els.recordHistory?.addEventListener("dblclick", handleRecordHistoryDblClick);
   els.recordHistory?.addEventListener("keydown", handleRecordHistoryKeydown);
-  els.editCurrentDraft?.addEventListener("click", openCurrentDraftEditor);
+  els.addDraft?.addEventListener("click", openNewDraftEditor);
   els.draftQueueList?.addEventListener("click", handleDraftQueueClick);
   els.recordEditSheet?.addEventListener("click", (event) => {
     if (event.target === els.recordEditSheet) closeMarkdownEditor();
@@ -7117,8 +7156,7 @@ console.log("示例代码块");
     });
   });
 
-  restoreDraft();
-  restoreDraftQueue();
+  restoreDraftQueue().then(() => restoreDraft());
   restoreVaultState();
   restoreRecordHistory();
   restoreLiveResultChecks();
