@@ -284,6 +284,21 @@ assert.ok(
   "main-world bridge should hand dropped image files to X's own uploader"
 );
 assert.ok(
+  mainWorldText.includes("const MEDIA_UPLOAD_BASE_TIMEOUT_MS = 90000") &&
+    mainWorldText.includes("const MEDIA_UPLOAD_MAX_TIMEOUT_MS = 150000") &&
+    mainWorldText.includes("X media upload took too long. X may be throttling this draft") &&
+    mainWorldText.includes("timeoutMs") &&
+    !mainWorldText.includes("Timed out waiting for X media upload") &&
+    !mainWorldText.includes("Retrying image ${index + 1}"),
+  "main-world image uploads should wait longer for X and return a recoverable timeout message"
+);
+assert.ok(
+  contentScriptText.includes("image upload(s) timed out in X") &&
+    sidepanelText.includes("image upload(s) timed out in X") &&
+    sidepanelText.includes("X 上传图片等待太久"),
+  "upload timeout summaries should explain the X-side delay in the selected language"
+);
+assert.ok(
   sidepanelText.includes("chrome.permissions.request"),
   "side panel should request remote image host access only when a draft needs it"
 );

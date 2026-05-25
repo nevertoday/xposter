@@ -4,6 +4,11 @@
   const CHANNEL_FROM_MAIN = "xposter-main";
   const EDITOR_SELECTOR =
     "[data-contents='true'] [contenteditable='true'], [contenteditable='true'][role='textbox'], [contenteditable='true'].public-DraftEditor-content, [contenteditable='true']";
+  const MEDIA_UPLOAD_BASE_TIMEOUT_MS = 90000;
+  const MEDIA_UPLOAD_PER_ITEM_TIMEOUT_MS = 2500;
+  const MEDIA_UPLOAD_MAX_TIMEOUT_MS = 150000;
+  const MEDIA_UPLOAD_TIMEOUT_ERROR =
+    "X media upload took too long. X may be throttling this draft, especially with many images. Wait a moment, then write again or split the article.";
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   let cancelRequested = false;
@@ -437,7 +442,7 @@
     return true;
   }
 
-  async function uploadImageAtMarker(draftNode, imageOperation, existingAtomicBlocks) {
+  async function uploadImageAtMarker(draftNode, imageOperation, existingAtomicBlocks, context = {}) {
     throwIfCancelled();
     const onFilesAdded = findOnFilesAdded();
     if (!onFilesAdded) return { ok: false, error: "X upload handler was not reachable" };
@@ -453,7 +458,11 @@
     const file = base64ToFile(preparedFile.base64, preparedFile.fileName, preparedFile.mime);
 
     onFilesAdded([file]);
-    const deadline = Date.now() + 45000;
+    const timeoutMs = Math.min(
+      MEDIA_UPLOAD_MAX_TIMEOUT_MS,
+      MEDIA_UPLOAD_BASE_TIMEOUT_MS + Math.max(0, Number(context.total || 0) - 1) * MEDIA_UPLOAD_PER_ITEM_TIMEOUT_MS
+    );
+    const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       throwIfCancelled();
       await sleep(350);
@@ -484,7 +493,7 @@
       }
     }
 
-    return { ok: false, error: "Timed out waiting for X media upload" };
+    return { ok: false, error: MEDIA_UPLOAD_TIMEOUT_ERROR, timeout: true, timeoutMs };
   }
 
   function replaceMarkerText(draftNode, marker, text) {
@@ -832,14 +841,10 @@
       draftNode = findDraftStateNode() || draftNode;
       const op = imageOps[index];
       progress(`Uploading image ${index + 1}/${imageOps.length}...`);
-      let result = await uploadImageAtMarker(draftNode, op, protectedAtomicBlocks);
-      if (!result.ok && /timed out/i.test(result.error || "")) {
-        progress(`Retrying image ${index + 1}...`, "warn");
-        await sleep(1400);
-        throwIfCancelled();
-        draftNode = findDraftStateNode() || draftNode;
-        result = await uploadImageAtMarker(draftNode, op, protectedAtomicBlocks);
-      }
+      const result = await uploadImageAtMarker(draftNode, op, protectedAtomicBlocks, {
+        index: index + 1,
+        total: imageOps.length
+      });
       if (result.ok) {
         summary.imgOk += 1;
         uploads.push({

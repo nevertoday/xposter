@@ -87,6 +87,7 @@
     "Stopping after the current upload step...": "当前上传步骤结束后停止...",
     "X editor bridge did not respond": "X 编辑器桥接没有响应",
     "X image upload failed": "X 图片上传失败",
+    "X media upload took too long. X may be throttling this draft, especially with many images. Wait a moment, then write again or split the article.": "X 上传图片等待太久。图片较多时 X 可能会限速。可以稍等后再次写入，或把文章拆成多篇。",
     "Local image folder cleared": "本地图片文件夹已清除",
     "Could not set local image folder": "无法设置本地图片文件夹"
   }));
@@ -246,6 +247,7 @@
       [/^Rendering (\d+) table\(s\)\.\.\.$/, "正在渲染 $1 个表格..."],
       [/^Article written(?: in (.+))?\.$/, (_, elapsed) => elapsed ? `文章已写入，用时 ${elapsed}。` : "文章已写入。"],
       [/^Article written(?: in (.+))?\. (.+) web image\(s\) stayed as Markdown links\.(?: Replace unreachable image URLs with public links, then write again if those images must upload\.)?$/, (_, elapsed, images) => elapsed ? `文章已写入，用时 ${elapsed}。${images} 张网页图片保留为 Markdown 链接。` : `文章已写入。${images} 张网页图片保留为 Markdown 链接。`],
+      [/^Article written(?: in (.+))?\. (.+) image upload\(s\) timed out in X\. Wait a moment, then write again or split the article if it has many images\.$/, (_, elapsed, images) => elapsed ? `文章已写入，用时 ${elapsed}。${images} 张图片在 X 上传时等待过久。可以稍等后再次写入，或把多图文章拆成多篇。` : `文章已写入。${images} 张图片在 X 上传时等待过久。可以稍等后再次写入，或把多图文章拆成多篇。`],
       [/^Article written(?: in (.+))?\. (.+) table\(s\) kept as Markdown\.$/, (_, elapsed, tables) => elapsed ? `文章已写入，用时 ${elapsed}。${tables} 个表格保留为 Markdown。` : `文章已写入。${tables} 个表格保留为 Markdown。`],
       [/^Article written(?: in (.+))?\. (.+) web image\(s\) stayed as Markdown links; (.+) table\(s\) kept as Markdown\.(?: Replace unreachable image URLs with public links, then write again if those images must upload\.)?$/, (_, elapsed, images, tables) => elapsed ? `文章已写入，用时 ${elapsed}。${images} 张网页图片保留为 Markdown 链接；${tables} 个表格保留为 Markdown。` : `文章已写入。${images} 张网页图片保留为 Markdown 链接；${tables} 个表格保留为 Markdown。`],
       [/^(\d+) local image\(s\) skipped: directory picker is unavailable$/, "$1 张本地图片已跳过：当前浏览器无法选择文件夹"],
@@ -1167,9 +1169,13 @@
   function formatCompletionMessage(summary) {
     const warnings = summary?.mediaWarnings || {};
     const uploadFailures = Number(summary?.main?.imgFail || 0);
+    const uploadTimeouts = Number(summary?.main?.imageErrors?.filter((error) => /upload took too long|timed out|timeout/i.test(error?.error || "")).length || 0);
     const elapsed = summary?.elapsedMs ? ` in ${(summary.elapsedMs / 1000).toFixed(1)}s` : "";
     const skippedImages = Number(warnings.images || 0) + uploadFailures;
     const skippedTables = Number(warnings.tables || 0);
+    if (uploadTimeouts) {
+      return `Article written${elapsed}. ${uploadTimeouts} image upload(s) timed out in X. Wait a moment, then write again or split the article if it has many images.`;
+    }
     if (skippedImages || skippedTables) {
       const parts = [];
       if (skippedImages) {

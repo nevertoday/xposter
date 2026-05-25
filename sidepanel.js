@@ -603,6 +603,7 @@ console.log("示例代码块");
       "The article can still be written now; those web images will stay as Markdown links.": "现在也可以继续写入文章；这些网页图片会保留为 Markdown 链接。",
       "Image website allowed. Write again to upload those images into X.": "图片可下载。再次写入即可把这些图片上传到 X。",
       "Some web images are still links. Try image upload again, or replace unreachable image URLs with public links.": "有些网页图片仍是链接。可以再次尝试图片上传，或把不可访问的图片 URL 换成公开链接。",
+      "X media upload took too long. X may be throttling this draft, especially with many images. Wait a moment, then write again or split the article.": "X 上传图片等待太久。图片较多时 X 可能会限速。可以稍等后再次写入，或把文章拆成多篇。",
       "All web images are ready. Write again to upload them.": "所有网页图片已就绪。再次写入即可上传。",
       "All web images uploaded.": "所有网页图片已上传。",
       "No import has run yet.": "还没有写入记录。",
@@ -2468,6 +2469,8 @@ console.log("示例代码块");
       [/^Import complete in (.+)\.$/, "导入完成，用时 $1。"],
       [/^Writing complete in (.+)\.$/, "写入完成，用时 $1。"],
       [/^Writing complete in (.+) with (\d+) media warning\(s\)\.$/, "写入完成，用时 $1；有 $2 个媒体提醒。"],
+      [/^Article written(?: in (.+))?\. (.+) image upload\(s\) timed out in X\. Wait a moment, then write again or split the article if it has many images\.$/, (_, elapsed, images) => elapsed ? `文章已写入，用时 ${elapsed}。${images} 张图片在 X 上传时等待过久。可以稍等后再次写入，或把多图文章拆成多篇。` : `文章已写入。${images} 张图片在 X 上传时等待过久。可以稍等后再次写入，或把多图文章拆成多篇。`],
+      [/^(\d+) image upload\(s\) timed out in X; (\d+)\/(\d+) media item\(s\), (.+)\.$/, "$1 张图片在 X 上传时等待过久；已上传 $2/$3 个媒体项，用时 $4。"],
       [/^Uploading image (\d+)\/(\d+)\.\.\.$/, "正在上传图片 $1/$2..."],
       [/^Stop request failed: (.+)$/, "停止请求失败：$1"],
       [/^First H1 was promoted to article title: (.+)$/, "第一个 H1 会作为文章标题：$1"],
@@ -5858,6 +5861,10 @@ console.log("示例代码块");
     const imageTotal = (images.ok || 0) + (images.fail || 0);
     const atomicTotal = (main.atomicOk || 0) + (main.atomicFail || 0);
     const elapsed = summary.elapsedMs ? `${(summary.elapsedMs / 1000).toFixed(1)}s` : "elapsed time unknown";
+    const uploadTimeouts = Number(main.imageErrors?.filter((error) => /upload took too long|timed out|timeout/i.test(error?.error || "")).length || 0);
+    if (uploadTimeouts) {
+      return `${uploadTimeouts} image upload(s) timed out in X; ${images.ok || 0}/${imageTotal} media item(s), ${elapsed}.`;
+    }
     if (warnings.total || main.imgFail) {
       const skipped = Number(warnings.images || 0) + Number(main.imgFail || 0);
       return `${skipped}/${imageTotal} image(s) kept as Markdown links; ${main.atomicOk || 0}/${atomicTotal} embed/code item(s), ${elapsed}.`;
@@ -6516,6 +6523,10 @@ console.log("示例代码块");
     const uploaded = Number(images.ok || 0);
     const keptImages = Number(summary.mediaWarnings?.images || 0) + Number(summary.main?.imgFail || 0);
     const keptTables = Number(summary.mediaWarnings?.tables || 0);
+    const uploadTimeouts = Number(summary.main?.imageErrors?.filter((error) => /upload took too long|timed out|timeout/i.test(error?.error || "")).length || 0);
+    if (uploadTimeouts) {
+      return `Article written${elapsed ? ` in ${elapsed}` : ""}. ${uploadTimeouts} image upload(s) timed out in X. Wait a moment, then write again or split the article if it has many images.`;
+    }
     if (keptImages) {
       return `Article written${elapsed ? ` in ${elapsed}` : ""}. ${keptImages} web image(s) stayed as Markdown links. Replace private or expired URLs with public links if they must upload.`;
     }
