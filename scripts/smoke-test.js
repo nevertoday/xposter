@@ -292,6 +292,13 @@ assert.ok(
   "batch queue writes should request all remote image origins during the user action"
 );
 assert.ok(
+  sidepanelText.includes("function hasMarkdownTransfer") &&
+    sidepanelText.includes("if (files.length) return files.some(isMarkdownFile);") &&
+    sidepanelText.includes("items.some(isLikelyImageTransferItem)") &&
+    !sidepanelText.includes('if (types.includes("Files")) return true;'),
+  "side panel page-level drop tray should ignore image files and only respond to Markdown/text drafts"
+);
+assert.ok(
   sidepanelHtml.includes('id="cancelImport"') &&
     sidepanelText.includes('sendToActiveTab({ type: "xposter:cancel-import" })') &&
     contentScriptText.includes('message?.type === "xposter:cancel-import"') &&
@@ -302,12 +309,13 @@ assert.ok(
   "article writes should expose a stop control that cancels the page upload loop"
 );
 assert.ok(
-  sidepanelText.includes("const X_ARTICLE_MEDIA_SOFT_LIMIT = 4") &&
+  sidepanelText.includes("const X_ARTICLE_MEDIA_SOFT_LIMIT = 25") &&
     sidepanelText.includes("X_ARTICLE_MEDIA_LIMIT_WARNING") &&
     sidepanelText.includes("function mediaUploadEstimate") &&
     sidepanelText.includes("mediaLimitWarningText") &&
-    sidepanelText.includes("X Articles media note"),
-  "draft preflight should warn before X rejects Article media beyond its visible 4-photo media block limit"
+    sidepanelText.includes("X Articles media note") &&
+    sidepanelText.includes("up to 25 image uploads"),
+  "draft preflight should warn before X rejects Article media beyond the verified 25-image Article limit"
 );
 assert.ok(
   sidepanelText.includes('options: importOptionsPayload()'),

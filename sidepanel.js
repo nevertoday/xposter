@@ -173,9 +173,9 @@
   const MAX_DRAFT_QUEUE_STORAGE_BYTES = 4 * 1024 * 1024;
   const MAX_DRAFT_QUEUE_ITEM_BYTES = 512 * 1024;
   const MAX_RECORD_MARKDOWN_CHARS = 120000;
-  const X_ARTICLE_MEDIA_SOFT_LIMIT = 4;
+  const X_ARTICLE_MEDIA_SOFT_LIMIT = 25;
   const X_ARTICLE_MEDIA_LIMIT_WARNING =
-    "X Articles media note: X's editor says one media block can include 1 GIF/video or up to 4 photos. This draft has {count} media upload items; extra images may be rejected by X.";
+    "X Articles media note: xPoster has verified X Articles can accept up to 25 image uploads in one article. This draft has {count} media upload items; extra images may be rejected by X.";
   const MARKDOWN_FILE_RE = /\.(md|markdown|mdown|mkd|txt)$/i;
   const MARKDOWN_FILE_ACCEPT = ".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain";
   const MARKDOWN_TRANSFER_MIME_RE = /^(text\/markdown|text\/plain|application\/octet-stream)$/i;
@@ -408,7 +408,7 @@ console.log("示例代码块");
       "Writing stopped by user.": "写入已停止。",
       Stopped: "已停止",
       "Stop request failed: active X tab did not respond": "停止请求失败：当前 X 标签页没有响应",
-      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "X 文章媒体提醒：X 编辑器提示一个媒体块可包含 1 个 GIF/视频，或最多 4 张照片。这篇草稿有 {count} 个媒体上传项；多出的图片可能会被 X 拒绝。",
+      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "X 文章媒体提醒：xPoster 实测 X 文章单篇最多可接收 25 个图片上传项。这篇草稿有 {count} 个媒体上传项；超出的图片可能会被 X 拒绝。",
       "X Article media note": "X 文章媒体提醒",
       "Review before writing": "写入前确认",
       "Focus the Markdown editor below.": "光标已放到下面的 Markdown 编辑框。",
@@ -925,7 +925,7 @@ console.log("示例代码块");
       "Writing stopped by user.": "写入已停止。",
       Stopped: "已停止",
       "Stop request failed: active X tab did not respond": "停止请求失败：当前 X 标签页没有响应",
-      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "X 文章媒体提醒：X 编辑器提示一个媒体块可包含 1 个 GIF/视频，或最多 4 张照片。这篇草稿有 {count} 个媒体上传项；多出的图片可能会被 X 拒绝。",
+      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "X 文章媒体提醒：xPoster 实测 X 文章单篇最多可接收 25 个图片上传项。这篇草稿有 {count} 个媒体上传项；超出的图片可能会被 X 拒绝。",
       "X Article media note": "X 文章媒体提醒",
       "Review before writing": "写入前确认",
       "Focus the Markdown editor below.": "光标已放到下面的 Markdown 编辑框。",
@@ -1367,7 +1367,7 @@ console.log("示例代码块");
       "Writing stopped by user.": "写入已停止。",
       Stopped: "已停止",
       "Stop request failed: active X tab did not respond": "停止请求失败：当前 X 标签页没有响应",
-      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "X 文章媒体提醒：X 编辑器提示一个媒体块可包含 1 个 GIF/视频，或最多 4 张照片。这篇草稿有 {count} 个媒体上传项；多出的图片可能会被 X 拒绝。",
+      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "X 文章媒体提醒：xPoster 实测 X 文章单篇最多可接收 25 个图片上传项。这篇草稿有 {count} 个媒体上传项；超出的图片可能会被 X 拒绝。",
       "X Article media note": "X 文章媒体提醒",
       "Review before writing": "写入前确认",
       "Focus the Markdown editor below.": "光标已放到下面的 Markdown 编辑框。",
@@ -6675,8 +6675,14 @@ console.log("示例代码块");
   function hasMarkdownTransfer(dataTransfer) {
     if (!dataTransfer) return false;
     const types = Array.from(dataTransfer.types || []);
-    if (types.includes("Files")) return true;
-    if (types.includes("text/plain") || types.includes("text/markdown")) return true;
+    if (markdownTextFromTransfer(dataTransfer)) return true;
+    if (types.includes("text/markdown")) return true;
+    const files = Array.from(dataTransfer.files || []);
+    if (files.length) return files.some(isMarkdownFile);
+    const items = Array.from(dataTransfer.items || []);
+    if (items.some(isLikelyMarkdownTransferItem)) return true;
+    if (items.some(isLikelyImageTransferItem)) return false;
+    if (types.includes("text/plain")) return false;
     return hasMarkdownFile(dataTransfer);
   }
 
@@ -6689,11 +6695,17 @@ console.log("示例代码块");
     const files = Array.from(dataTransfer?.files || []);
     if (files.some(isMarkdownFile)) return true;
     const items = Array.from(dataTransfer?.items || []);
-    return items.some((item) => {
-      if (item?.kind !== "file") return false;
-      if (!item.type) return true;
-      return MARKDOWN_TRANSFER_MIME_RE.test(item.type);
-    });
+    return items.some(isLikelyMarkdownTransferItem);
+  }
+
+  function isLikelyMarkdownTransferItem(item) {
+    if (item?.kind !== "file") return false;
+    if (!item.type) return true;
+    return MARKDOWN_TRANSFER_MIME_RE.test(item.type);
+  }
+
+  function isLikelyImageTransferItem(item) {
+    return item?.kind === "file" && /^image\//i.test(item.type || "");
   }
 
   function installDraftDropTray() {
