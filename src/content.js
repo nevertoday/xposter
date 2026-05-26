@@ -17,13 +17,13 @@
   const MAX_SIDEPANEL_QUEUE_STORAGE_BYTES = 4 * 1024 * 1024;
   const MAX_SIDEPANEL_QUEUE_ITEM_BYTES = 512 * 1024;
   const PENDING_ARTICLE_IMPORT_TTL_MS = 10 * 60 * 1000;
-  const X_ARTICLE_MEDIA_SOFT_LIMIT = 25;
-  const X_ARTICLE_MEDIA_HEADROOM_THRESHOLD = 20;
+  const X_ARTICLE_MEDIA_SOFT_LIMIT = 20;
+  const X_ARTICLE_MEDIA_HEADROOM_THRESHOLD = 16;
   const MAIN_WORLD_SILENCE_TIMEOUT_MS = 180000;
   const X_ARTICLE_MEDIA_LIMIT_WARNING =
-    "Image plan: {count}/25, above xPoster's verified X Article limit. Split the draft or remove images before writing to avoid a late X rejection.";
+    "Image plan: {count}/20, at or above xPoster's verified X Article safe limit. Split the draft or remove images before writing to avoid a late X rejection.";
   const X_ARTICLE_MEDIA_HEADROOM_NOTE =
-    "Image plan: {count}/25. You are close to the verified X Article limit; split the draft before adding many more images.";
+    "Image plan: {count}/20. You are close to the verified X Article safe limit; split the draft before adding many more images.";
   const ARTICLE_EXPORT_MIN_SCORE = 12;
   const CONTENT_ZH_TEXT = new Map(Object.entries({
     "xPoster page drop target": "xPoster 页面拖拽目标",
@@ -104,8 +104,8 @@
     "X editor bridge did not respond": "X 编辑器桥接没有响应",
     "X image upload failed": "X 图片上传失败",
     "X media upload took too long. X may be throttling this draft, especially with many images. Wait a moment, then write again or split the article.": "X 上传图片等待太久。图片较多时 X 可能会限速。可以稍等后再次写入，或把文章拆成多篇。",
-    [X_ARTICLE_MEDIA_LIMIT_WARNING]: "图片容量：{count}/25，已超过 xPoster 实测上限。建议先拆成多篇或减少图片，避免写到最后被 X 拒绝。",
-    [X_ARTICLE_MEDIA_HEADROOM_NOTE]: "图片容量：{count}/25。已经接近 X 文章实测上限，继续加图前建议先考虑拆篇。",
+    [X_ARTICLE_MEDIA_LIMIT_WARNING]: "图片容量：{count}/20，已达到或超过 xPoster 实测安全上限。建议先拆成多篇或减少图片，避免写到最后被 X 拒绝。",
+    [X_ARTICLE_MEDIA_HEADROOM_NOTE]: "图片容量：{count}/20。已经接近 X 文章实测安全上限，继续加图前建议先考虑拆篇。",
     "Local image folder cleared": "本地图片文件夹已清除",
     "Local image folder": "本地图片文件夹",
     "Choose the folder that contains your Markdown images.": "请选择包含 Markdown 图片的文件夹。",
@@ -298,8 +298,8 @@
       [/^Setting title\.\.\.$/, "正在设置标题..."],
       [/^Setting cover\.\.\.$/, "正在设置封面..."],
       [/^Cleaning up import markers\.\.\.$/, "正在清理写入标记..."],
-      [/^Image plan: (\d+)\/25, above xPoster's verified X Article limit\. Split the draft or remove images before writing to avoid a late X rejection\.$/, "图片容量：$1/25，已超过 xPoster 实测上限。建议先拆成多篇或减少图片，避免写到最后被 X 拒绝。"],
-      [/^Image plan: (\d+)\/25\. You are close to the verified X Article limit; split the draft before adding many more images\.$/, "图片容量：$1/25。已经接近 X 文章实测上限，继续加图前建议先考虑拆篇。"],
+      [/^Image plan: (\d+)\/20, at or above xPoster's verified X Article safe limit\. Split the draft or remove images before writing to avoid a late X rejection\.$/, "图片容量：$1/20，已达到或超过 xPoster 实测安全上限。建议先拆成多篇或减少图片，避免写到最后被 X 拒绝。"],
+      [/^Image plan: (\d+)\/20\. You are close to the verified X Article safe limit; split the draft before adding many more images\.$/, "图片容量：$1/20。已经接近 X 文章实测安全上限，继续加图前建议先考虑拆篇。"],
       [/^Article written(?: in (.+))?\.$/, (_, elapsed) => elapsed ? `文章已写入，用时 ${elapsed}。` : "文章已写入。"],
       [/^Article written(?: in (.+))?\. (.+) web image\(s\) stayed as Markdown links\.(?: Replace unreachable image URLs with public links, then write again if those images must upload\.)?$/, (_, elapsed, images) => elapsed ? `文章已写入，用时 ${elapsed}。${images} 张网页图片保留为 Markdown 链接。` : `文章已写入。${images} 张网页图片保留为 Markdown 链接。`],
       [/^Article written(?: in (.+))?\. (.+) image upload\(s\) timed out in X\. Wait a moment, then write again or split the article if it has many images\.$/, (_, elapsed, images) => elapsed ? `文章已写入，用时 ${elapsed}。${images} 张图片在 X 上传时等待过久。可以稍等后再次写入，或把多图文章拆成多篇。` : `文章已写入。${images} 张图片在 X 上传时等待过久。可以稍等后再次写入，或把多图文章拆成多篇。`],
@@ -830,8 +830,8 @@
       tables,
       coverOnly,
       total,
-      nearSoftLimit: total >= X_ARTICLE_MEDIA_HEADROOM_THRESHOLD && total <= X_ARTICLE_MEDIA_SOFT_LIMIT,
-      overSoftLimit: total > X_ARTICLE_MEDIA_SOFT_LIMIT
+      nearSoftLimit: total >= X_ARTICLE_MEDIA_HEADROOM_THRESHOLD && total < X_ARTICLE_MEDIA_SOFT_LIMIT,
+      overSoftLimit: total >= X_ARTICLE_MEDIA_SOFT_LIMIT
     };
   }
 

@@ -3977,7 +3977,7 @@ textarea:focus-visible,
   gap: 0;
   margin: 0;
   padding: 0;
-  border-block: 1px solid var(--line);
+  border: 0;
 }
 
 .setting-checks label {
@@ -3993,10 +3993,6 @@ textarea:focus-visible,
   cursor: pointer;
   transition:
     background-color var(--motion-quick) ease;
-}
-
-.setting-checks label + label {
-  border-top: 1px solid color-mix(in oklch, var(--line), transparent 18%);
 }
 
 .setting-checks label:hover {

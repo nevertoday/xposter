@@ -148,14 +148,14 @@
   const MAX_DRAFT_QUEUE_STORAGE_BYTES = 4 * 1024 * 1024;
   const MAX_DRAFT_QUEUE_ITEM_BYTES = 512 * 1024;
   const MAX_RECORD_MARKDOWN_CHARS = 120000;
-  const X_ARTICLE_MEDIA_SOFT_LIMIT = 25;
-  const X_ARTICLE_MEDIA_HEADROOM_THRESHOLD = 20;
+  const X_ARTICLE_MEDIA_SOFT_LIMIT = 20;
+  const X_ARTICLE_MEDIA_HEADROOM_THRESHOLD = 16;
   const X_ARTICLE_MEDIA_LIMIT_WARNING =
-    "Image plan: {count}/25, above xPoster's verified X Article limit. Split the draft or remove images before writing to avoid a late X rejection.";
+    "Image plan: {count}/20, at or above xPoster's verified X Article safe limit. Split the draft or remove images before writing to avoid a late X rejection.";
   const X_ARTICLE_MEDIA_HEADROOM_NOTE =
-    "Image plan: {count}/25. You are close to the verified X Article limit; split the draft before adding many more images.";
+    "Image plan: {count}/20. You are close to the verified X Article safe limit; split the draft before adding many more images.";
   const X_ARTICLE_MEDIA_CAPACITY_NOTE =
-    "Image plan: {count}/25.";
+    "Image plan: {count}/20.";
   const MARKDOWN_FILE_RE = /\.(md|markdown|mdown|mkd|txt)$/i;
   const MARKDOWN_FILE_ACCEPT = ".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain";
   const MARKDOWN_TRANSFER_MIME_RE = /^(text\/markdown|text\/plain|application\/octet-stream)$/i;
@@ -308,9 +308,9 @@
       "Could not save the Markdown queue in browser storage.": "无法把 Markdown 队列保存到浏览器存储。",
       "Loaded dragged Markdown.": "已载入拖入的 Markdown。",
       "{count} new draft(s) added. {total} total in queue.": "新增 {count} 篇草稿，队列现在有 {total} 篇。",
-      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "图片容量：{count}/25，已超过 xPoster 实测上限。建议先拆成多篇或减少图片，避免写到最后被 X 拒绝。",
-      [X_ARTICLE_MEDIA_HEADROOM_NOTE]: "图片容量：{count}/25。已经接近 X 文章实测上限，继续加图前建议先考虑拆篇。",
-      [X_ARTICLE_MEDIA_CAPACITY_NOTE]: "图片容量：{count}/25。",
+      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "图片容量：{count}/20，已达到或超过 xPoster 实测安全上限。建议先拆成多篇或减少图片，避免写到最后被 X 拒绝。",
+      [X_ARTICLE_MEDIA_HEADROOM_NOTE]: "图片容量：{count}/20。已经接近 X 文章实测安全上限，继续加图前建议先考虑拆篇。",
+      [X_ARTICLE_MEDIA_CAPACITY_NOTE]: "图片容量：{count}/20。",
       "X Article media note": "X 文章媒体提醒",
       "Review before writing": "写入前确认",
       "Focus the Markdown editor below.": "光标已放到下面的 Markdown 编辑框。",
@@ -829,9 +829,9 @@
       "Writing stopped by user.": "写入已停止。",
       Stopped: "已停止",
       "Stop request failed: active X tab did not respond": "停止请求失败：当前 X 标签页没有响应",
-      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "图片容量：{count}/25，已超过 xPoster 实测上限。建议先拆成多篇或减少图片，避免写到最后被 X 拒绝。",
-      [X_ARTICLE_MEDIA_HEADROOM_NOTE]: "图片容量：{count}/25。已经接近 X 文章实测上限，继续加图前建议先考虑拆篇。",
-      [X_ARTICLE_MEDIA_CAPACITY_NOTE]: "图片容量：{count}/25。",
+      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "图片容量：{count}/20，已达到或超过 xPoster 实测安全上限。建议先拆成多篇或减少图片，避免写到最后被 X 拒绝。",
+      [X_ARTICLE_MEDIA_HEADROOM_NOTE]: "图片容量：{count}/20。已经接近 X 文章实测安全上限，继续加图前建议先考虑拆篇。",
+      [X_ARTICLE_MEDIA_CAPACITY_NOTE]: "图片容量：{count}/20。",
       "X Article media note": "X 文章媒体提醒",
       "Review before writing": "写入前确认",
       "Focus the Markdown editor below.": "光标已放到下面的 Markdown 编辑框。",
@@ -1298,9 +1298,9 @@
       "Writing stopped by user.": "写入已停止。",
       Stopped: "已停止",
       "Stop request failed: active X tab did not respond": "停止请求失败：当前 X 标签页没有响应",
-      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "图片容量：{count}/25，已超过 xPoster 实测上限。建议先拆成多篇或减少图片，避免写到最后被 X 拒绝。",
-      [X_ARTICLE_MEDIA_HEADROOM_NOTE]: "图片容量：{count}/25。已经接近 X 文章实测上限，继续加图前建议先考虑拆篇。",
-      [X_ARTICLE_MEDIA_CAPACITY_NOTE]: "图片容量：{count}/25。",
+      [X_ARTICLE_MEDIA_LIMIT_WARNING]: "图片容量：{count}/20，已达到或超过 xPoster 实测安全上限。建议先拆成多篇或减少图片，避免写到最后被 X 拒绝。",
+      [X_ARTICLE_MEDIA_HEADROOM_NOTE]: "图片容量：{count}/20。已经接近 X 文章实测安全上限，继续加图前建议先考虑拆篇。",
+      [X_ARTICLE_MEDIA_CAPACITY_NOTE]: "图片容量：{count}/20。",
       "X Article media note": "X 文章媒体提醒",
       "Review before writing": "写入前确认",
       "Focus the Markdown editor below.": "光标已放到下面的 Markdown 编辑框。",
@@ -2739,8 +2739,8 @@
       tables,
       coverOnly,
       total,
-      nearSoftLimit: total >= X_ARTICLE_MEDIA_HEADROOM_THRESHOLD && total <= X_ARTICLE_MEDIA_SOFT_LIMIT,
-      overSoftLimit: total > X_ARTICLE_MEDIA_SOFT_LIMIT
+      nearSoftLimit: total >= X_ARTICLE_MEDIA_HEADROOM_THRESHOLD && total < X_ARTICLE_MEDIA_SOFT_LIMIT,
+      overSoftLimit: total >= X_ARTICLE_MEDIA_SOFT_LIMIT
     };
   }
 

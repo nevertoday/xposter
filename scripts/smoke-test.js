@@ -88,6 +88,10 @@ const failedRemoteImageMap = new Map(
     .map((segment) => [segment, { ok: false, permissionRequired: true, error: "Chrome permission required" }])
 );
 const remoteFallbackPlan = shared.buildPastePlan(remoteImageParsed.segments, failedRemoteImageMap);
+const mediaLimitDraft = (count) =>
+  Array.from({ length: count }, (_, index) => `![image ${index + 1}](https://images.example.test/${index + 1}.png)`).join("\n\n");
+const mediaNearLimitParsed = shared.parseMarkdown(mediaLimitDraft(19));
+const mediaAtLimitParsed = shared.parseMarkdown(mediaLimitDraft(20));
 const frontmatterOnlyCoverDraft = [
   "---",
   "title: Cover only",
@@ -127,14 +131,30 @@ const diagnosticsHtmlIncludesSharedFirst = () =>
   /src="src\/shared\.js"[\s\S]*src="src\/i18n\.js"[\s\S]*src="diagnostics\.js"/.test(diagnosticsHtml);
 const statusHelperStart = contentScriptText.indexOf("  function normalizeText");
 const statusHelperEnd = contentScriptText.indexOf("  function showStatus");
+const contentMediaHelperStart = contentScriptText.indexOf("  function articleMediaUploadEstimate");
+const contentMediaHelperEnd = contentScriptText.indexOf("  function mediaLimitText");
+const sidepanelMediaHelperStart = sidepanelText.indexOf("  function mediaUploadEstimate");
+const sidepanelMediaHelperEnd = sidepanelText.indexOf("  function mediaNoteText");
 const statusSandbox = {
   document: { body: {}, documentElement: {} },
   getComputedStyle: () => ({ backgroundColor: "rgb(18, 26, 34)" }),
   window: { matchMedia: () => ({ matches: false }) },
   shared: { toTraditionalChinese: shared.toTraditionalChinese }
 };
+const mediaSandbox = {
+  shared: { imageSourcesMatch: shared.imageSourcesMatch },
+  nearParsed: mediaNearLimitParsed,
+  atParsed: mediaAtLimitParsed
+};
 
 assert.ok(statusHelperStart >= 0 && statusHelperEnd > statusHelperStart, "status helper functions should be present");
+assert.ok(
+  contentMediaHelperStart >= 0 &&
+    contentMediaHelperEnd > contentMediaHelperStart &&
+    sidepanelMediaHelperStart >= 0 &&
+    sidepanelMediaHelperEnd > sidepanelMediaHelperStart,
+  "media estimate helper functions should be present"
+);
 vm.runInNewContext(
   `const state = { language: "zh" };
    const CONTENT_ZH_TEXT = new Map(Object.entries({
@@ -149,6 +169,19 @@ vm.runInNewContext(
    this.state = state;
    this.statusHelpers = { statusThemeFromPage, statusProgressForText, translateContentText, articleExportLabel };`,
   statusSandbox
+);
+vm.runInNewContext(
+  `const X_ARTICLE_MEDIA_SOFT_LIMIT = 20;
+   const X_ARTICLE_MEDIA_HEADROOM_THRESHOLD = 16;
+   const importOptions = {};
+   ${contentScriptText.slice(contentMediaHelperStart, contentMediaHelperEnd)}
+   const contentNear = articleMediaUploadEstimate(nearParsed);
+   const contentAt = articleMediaUploadEstimate(atParsed);
+   ${sidepanelText.slice(sidepanelMediaHelperStart, sidepanelMediaHelperEnd)}
+   const sidepanelNear = mediaUploadEstimate(nearParsed);
+   const sidepanelAt = mediaUploadEstimate(atParsed);
+   this.mediaEstimates = { contentNear, contentAt, sidepanelNear, sidepanelAt };`,
+  mediaSandbox
 );
 
 assert.equal(parsed.title, "xPoster live smoke test", "frontmatter title should parse");
@@ -396,14 +429,14 @@ assert.ok(
   "article writes should expose a stop control that cancels the page upload loop"
 );
 assert.ok(
-  sidepanelText.includes("const X_ARTICLE_MEDIA_SOFT_LIMIT = 25") &&
-    contentScriptText.includes("const X_ARTICLE_MEDIA_SOFT_LIMIT = 25") &&
+  sidepanelText.includes("const X_ARTICLE_MEDIA_SOFT_LIMIT = 20") &&
+    contentScriptText.includes("const X_ARTICLE_MEDIA_SOFT_LIMIT = 20") &&
     contentScriptText.includes("function preflightArticleMediaLimit") &&
     contentScriptText.includes("function articleMediaUploadEstimate") &&
     contentScriptText.includes('type: "preflight-blocked"') &&
     contentScriptText.includes("mediaLimitWarningText") &&
     contentScriptText.includes("mediaHeadroomText") &&
-    sidepanelText.includes("const X_ARTICLE_MEDIA_HEADROOM_THRESHOLD = 20") &&
+    sidepanelText.includes("const X_ARTICLE_MEDIA_HEADROOM_THRESHOLD = 16") &&
     sidepanelText.includes("X_ARTICLE_MEDIA_LIMIT_WARNING") &&
     sidepanelText.includes("X_ARTICLE_MEDIA_HEADROOM_NOTE") &&
     sidepanelText.includes("X_ARTICLE_MEDIA_CAPACITY_NOTE") &&
@@ -414,10 +447,41 @@ assert.ok(
     sidepanelText.includes("nearSoftLimit") &&
     sidepanelText.includes('recordLiveProgressEvent("preflight-blocked"') &&
     sidepanelText.includes("X Article media note") &&
-    sidepanelText.includes("Image plan: {count}/25") &&
+    sidepanelText.includes("Image plan: {count}/20") &&
     sidepanelText.includes("Split the draft") &&
     sidepanelText.includes("remove images"),
-  "draft preflight should show gentle media capacity before X rejects Article media beyond the verified 25-image Article limit"
+  "draft preflight should show gentle media capacity before X rejects Article media beyond the verified 20-image Article limit"
+);
+assert.deepEqual(
+  {
+    contentNear: {
+      total: mediaSandbox.mediaEstimates.contentNear.total,
+      nearSoftLimit: mediaSandbox.mediaEstimates.contentNear.nearSoftLimit,
+      overSoftLimit: mediaSandbox.mediaEstimates.contentNear.overSoftLimit
+    },
+    contentAt: {
+      total: mediaSandbox.mediaEstimates.contentAt.total,
+      nearSoftLimit: mediaSandbox.mediaEstimates.contentAt.nearSoftLimit,
+      overSoftLimit: mediaSandbox.mediaEstimates.contentAt.overSoftLimit
+    },
+    sidepanelNear: {
+      total: mediaSandbox.mediaEstimates.sidepanelNear.total,
+      nearSoftLimit: mediaSandbox.mediaEstimates.sidepanelNear.nearSoftLimit,
+      overSoftLimit: mediaSandbox.mediaEstimates.sidepanelNear.overSoftLimit
+    },
+    sidepanelAt: {
+      total: mediaSandbox.mediaEstimates.sidepanelAt.total,
+      nearSoftLimit: mediaSandbox.mediaEstimates.sidepanelAt.nearSoftLimit,
+      overSoftLimit: mediaSandbox.mediaEstimates.sidepanelAt.overSoftLimit
+    }
+  },
+  {
+    contentNear: { total: 19, nearSoftLimit: true, overSoftLimit: false },
+    contentAt: { total: 20, nearSoftLimit: false, overSoftLimit: true },
+    sidepanelNear: { total: 19, nearSoftLimit: true, overSoftLimit: false },
+    sidepanelAt: { total: 20, nearSoftLimit: false, overSoftLimit: true }
+  },
+  "20 planned media uploads should block before X reaches its late-upload failure zone"
 );
 assert.ok(
   sidepanelHtml.includes('class="secondary compact preflight-action"') &&
