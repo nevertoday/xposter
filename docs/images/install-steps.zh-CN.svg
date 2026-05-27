@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">Chrome 源码安装步骤</title>
+  <desc id="desc">在 Chrome 扩展管理页中通过加载已解压扩展安装 xPoster 源码版本的三个步骤。</desc>
+  <rect width="1200" height="520" fill="#fbfaf7"/>
+  <text x="70" y="76" fill="#211f1b" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="34" font-weight="700">在 Chrome 中安装源码版本</text>
+  <g font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif">
+    <rect x="70" y="124" width="315" height="300" rx="18" fill="#f1eee7" stroke="#d9d3c7" stroke-width="2"/>
+    <circle cx="112" cy="166" r="24" fill="#25352d"/>
+    <text x="104" y="175" fill="#fff" font-size="25" font-weight="700">1</text>
+    <text x="70" y="468" fill="#5c574f" font-size="16">打开 chrome://extensions</text>
+    <rect x="102" y="206" width="250" height="148" rx="12" fill="#fff"/>
+    <text x="126" y="256" fill="#211f1b" font-size="21" font-weight="700">Chrome 扩展程序</text>
+    <text x="126" y="294" fill="#5c574f" font-size="17">管理扩展</text>
+    <rect x="126" y="316" width="168" height="22" rx="11" fill="#d9d3c7"/>
+    <rect x="442" y="124" width="315" height="300" rx="18" fill="#f1eee7" stroke="#d9d3c7" stroke-width="2"/>
+    <circle cx="484" cy="166" r="24" fill="#25352d"/>
+    <text x="476" y="175" fill="#fff" font-size="25" font-weight="700">2</text>
+    <text x="442" y="468" fill="#5c574f" font-size="16">打开开发者模式</text>
+    <rect x="476" y="214" width="230" height="116" rx="16" fill="#fff"/>
+    <text x="504" y="258" fill="#211f1b" font-size="21" font-weight="700">开发者模式</text>
+    <rect x="504" y="284" width="144" height="34" rx="17" fill="#25352d"/>
+    <circle cx="628" cy="301" r="14" fill="#d9ead8"/>
+    <rect x="814" y="124" width="315" height="300" rx="18" fill="#f1eee7" stroke="#d9d3c7" stroke-width="2"/>
+    <circle cx="856" cy="166" r="24" fill="#25352d"/>
+    <text x="848" y="175" fill="#fff" font-size="25" font-weight="700">3</text>
+    <text x="814" y="468" fill="#5c574f" font-size="16">点击加载已解压，选择 xPoster</text>
+    <rect x="856" y="216" width="230" height="58" rx="12" fill="#25352d"/>
+    <text x="971" y="252" text-anchor="middle" fill="#fff" font-size="20" font-weight="700">加载已解压</text>
+    <rect x="856" y="302" width="230" height="72" rx="12" fill="#fff"/>
+    <text x="882" y="344" fill="#211f1b" font-size="18">manifest.json</text>
+  </g>
+</svg>

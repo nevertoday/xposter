@@ -6,7 +6,7 @@ xPoster 是一个免费开源的 Chrome 扩展，适合先用 Markdown 写文章
 
 [English README](README.md) · [Chrome 应用商店](https://chromewebstore.google.com/detail/xposter/iimkimodgdjnnmdopeolboakhjmhfbbj?authuser=0&hl=zh-CN) · [使用指南](docs/usage.zh-CN.md) · [隐私说明](docs/privacy.zh-CN.md)
 
-![xPoster Markdown 到 X Articles 概览](docs/images/github-hero.svg)
+![xPoster Markdown 到 X Articles 概览](docs/images/github-hero.zh-CN.svg)
 
 ## 它能做什么
 
@@ -30,7 +30,7 @@ xPoster 是一个免费开源的 Chrome 扩展，适合先用 Markdown 写文章
 
 开发者源码安装：
 
-![Chrome 加载解包扩展步骤](docs/images/install-steps.svg)
+![Chrome 加载解包扩展步骤](docs/images/install-steps.zh-CN.svg)
 
 1. 下载或 clone 这个仓库。
 2. 打开 Chrome 的 `chrome://extensions`。
@@ -42,7 +42,7 @@ xPoster 是一个免费开源的 Chrome 扩展，适合先用 Markdown 写文章
 
 ## 使用流程
 
-![xPoster 发布流程](docs/images/publishing-flow.svg)
+![xPoster 发布流程](docs/images/publishing-flow.zh-CN.svg)
 
 1. 打开或新建一篇 X Article：`https://x.com/compose/articles`。
 2. 打开 xPoster 侧边栏。

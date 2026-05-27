@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">xPoster GitHub 中文首页图</title>
+  <desc id="desc">xPoster 将 Markdown 草稿经过检查后写入 X Article 草稿，并保留手动发布步骤的中文概览图。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7fbff"/>
+      <stop offset="0.58" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#fff4ec"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f1419"/>
+      <stop offset="1" stop-color="#243447"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#0f1419" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <path d="M0 626 C190 560 324 704 512 630 C760 532 874 606 1200 520 L1200 720 L0 720 Z" fill="#e8f5f2"/>
+  <path d="M942 0 C894 104 982 171 1128 169 C1178 168 1200 177 1200 177 L1200 0 Z" fill="#eaf3ff"/>
+
+  <g transform="translate(66 66)">
+    <rect x="0" y="0" width="1068" height="588" rx="34" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="0" y="0" width="1068" height="588" rx="34" fill="#ffffff" stroke="#dce5ec"/>
+
+    <g transform="translate(54 58)">
+      <rect x="0" y="0" width="88" height="30" rx="15" fill="#e7f3ff"/>
+      <text x="44" y="20" text-anchor="middle" fill="#0f6cbf" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="700">xPoster</text>
+      <text x="0" y="84" fill="#0f1419" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="54" font-weight="800">Markdown 到</text>
+      <text x="0" y="142" fill="#0f1419" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="54" font-weight="800">X Articles</text>
+      <text x="0" y="186" fill="#536471" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="21">在熟悉的编辑器里写草稿。</text>
+      <text x="0" y="216" fill="#536471" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="21">检查 X 编辑器，写入草稿，手动发布。</text>
+
+      <g transform="translate(0 258)" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="700">
+        <rect x="0" y="0" width="116" height="36" rx="18" fill="#0f1419"/>
+        <text x="58" y="23" text-anchor="middle" fill="#ffffff">免费开源</text>
+        <rect x="128" y="0" width="150" height="36" rx="18" fill="#e8f5f2"/>
+        <text x="203" y="23" text-anchor="middle" fill="#08785f">无需后台</text>
+        <rect x="290" y="0" width="176" height="36" rx="18" fill="#fff1e8"/>
+        <text x="378" y="23" text-anchor="middle" fill="#9b4b12">手动发布</text>
+      </g>
+
+      <g transform="translate(0 344)" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif">
+        <rect x="0" y="0" width="430" height="120" rx="22" fill="#f7f9f9" stroke="#d7e0e7"/>
+        <text x="26" y="38" fill="#0f1419" font-size="19" font-weight="800">适合真实长文草稿</text>
+        <text x="26" y="70" fill="#536471" font-size="16">支持 frontmatter、标题、图片、表格、代码、</text>
+        <text x="26" y="96" fill="#536471" font-size="16">分割线、链接和 X/Twitter 推文嵌入。</text>
+      </g>
+    </g>
+
+    <g transform="translate(546 56)">
+      <rect x="116" y="28" width="348" height="420" rx="28" fill="#f7f9f9" stroke="#d7e0e7"/>
+      <rect x="148" y="66" width="284" height="38" rx="10" fill="#ffffff" stroke="#d7e0e7"/>
+      <text x="170" y="91" fill="#536471" font-family="Arial, sans-serif" font-size="14">x.com/compose/articles</text>
+      <rect x="148" y="132" width="248" height="24" rx="8" fill="#0f1419"/>
+      <rect x="148" y="174" width="206" height="14" rx="7" fill="#c8d4dd"/>
+      <rect x="148" y="202" width="238" height="14" rx="7" fill="#dce5ec"/>
+      <rect x="148" y="230" width="190" height="14" rx="7" fill="#dce5ec"/>
+      <rect x="148" y="272" width="254" height="86" rx="14" fill="#ffffff" stroke="#d7e0e7"/>
+      <rect x="168" y="294" width="116" height="12" rx="6" fill="#1d9bf0"/>
+      <rect x="168" y="322" width="194" height="10" rx="5" fill="#dce5ec"/>
+      <rect x="148" y="382" width="176" height="36" rx="18" fill="#0f1419"/>
+      <text x="236" y="405" text-anchor="middle" fill="#ffffff" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="700">回到 X 检查</text>
+
+      <g transform="translate(0 0)">
+        <rect x="0" y="0" width="364" height="506" rx="26" fill="#ffffff" stroke="#cfd9de" filter="url(#shadow)"/>
+        <rect x="0" y="0" width="364" height="506" rx="26" fill="#ffffff" stroke="#cfd9de"/>
+        <rect x="0" y="0" width="364" height="62" rx="26" fill="url(#panel)"/>
+        <text x="24" y="38" fill="#ffffff" font-family="Arial, sans-serif" font-size="19" font-weight="800">xPoster</text>
+        <rect x="242" y="18" width="96" height="28" rx="14" fill="#213d52"/>
+        <text x="290" y="37" text-anchor="middle" fill="#b7e1ff" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="700">已检查 X</text>
+
+        <g font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="700">
+          <rect x="20" y="82" width="98" height="34" rx="9" fill="#0f1419"/>
+          <text x="69" y="104" text-anchor="middle" fill="#ffffff">待发布</text>
+          <rect x="126" y="82" width="98" height="34" rx="9" fill="#f2f6f8" stroke="#d7e0e7"/>
+          <text x="175" y="104" text-anchor="middle" fill="#536471">记录</text>
+          <rect x="232" y="82" width="112" height="34" rx="9" fill="#f2f6f8" stroke="#d7e0e7"/>
+          <text x="288" y="104" text-anchor="middle" fill="#536471">设置</text>
+        </g>
+
+        <rect x="22" y="138" width="320" height="170" rx="16" fill="#f7f9f9" stroke="#d7e0e7"/>
+        <text x="44" y="170" fill="#0f1419" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="800">Markdown 草稿</text>
+        <text x="44" y="202" fill="#536471" font-family="Arial, sans-serif" font-size="15">--- title: 发布笔记 ---</text>
+        <text x="44" y="230" fill="#0f1419" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="700"># 一篇长文</text>
+        <text x="44" y="260" fill="#536471" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="15">图片、表格、代码、推文...</text>
+
+        <g font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif">
+          <rect x="22" y="324" width="150" height="54" rx="14" fill="#e8f5f2"/>
+          <text x="42" y="347" fill="#08785f" font-size="14" font-weight="800">写入前检查</text>
+          <text x="42" y="367" fill="#4d6f66" font-size="12">草稿和编辑器通过</text>
+          <rect x="192" y="324" width="150" height="54" rx="14" fill="#fff1e8"/>
+          <text x="212" y="347" fill="#9b4b12" font-size="14" font-weight="800">图片</text>
+          <text x="212" y="367" fill="#8a6c59" font-size="12">本地或网页来源</text>
+        </g>
+
+        <rect x="22" y="400" width="320" height="54" rx="17" fill="#0f1419"/>
+        <text x="182" y="434" text-anchor="middle" fill="#ffffff" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="800">写入 X 草稿</text>
+        <text x="182" y="480" text-anchor="middle" fill="#536471" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="13">记录可恢复原始 Markdown</text>
+      </g>
+
+      <path d="M384 242 C422 230 448 218 484 206" fill="none" stroke="#1d9bf0" stroke-width="5" stroke-linecap="round"/>
+      <path d="M470 195 L486 205 L474 219" fill="none" stroke="#1d9bf0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

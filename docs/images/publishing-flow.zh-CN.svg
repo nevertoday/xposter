@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">xPoster 中文发布流程</title>
+  <desc id="desc">xPoster 的中文流程图：载入 Markdown、检查 X Article、写入草稿，最后在 X 中手动发布。</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="170%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#0f1419" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="430" rx="0" fill="#f7fbff"/>
+  <rect x="54" y="48" width="1092" height="334" rx="30" fill="#ffffff" stroke="#dce5ec" filter="url(#shadow)"/>
+  <text x="92" y="104" fill="#0f1419" font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="32" font-weight="800">Markdown 到 X Article，最后手动发布</text>
+
+  <g font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif">
+    <g transform="translate(92 146)">
+      <rect width="212" height="138" rx="22" fill="#f7f9f9" stroke="#d7e0e7"/>
+      <rect x="24" y="24" width="48" height="48" rx="14" fill="#e7f3ff"/>
+      <text x="48" y="56" text-anchor="middle" fill="#0f6cbf" font-size="24" font-weight="800">1</text>
+      <text x="24" y="98" fill="#0f1419" font-size="21" font-weight="800">载入 Markdown</text>
+      <text x="24" y="122" fill="#536471" font-size="15">粘贴、选择或拖入 .md</text>
+    </g>
+
+    <path d="M324 215h82" stroke="#1d9bf0" stroke-width="5" stroke-linecap="round"/>
+    <path d="M392 199l20 16-20 16" fill="none" stroke="#1d9bf0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <g transform="translate(426 146)">
+      <rect width="212" height="138" rx="22" fill="#f7f9f9" stroke="#d7e0e7"/>
+      <rect x="24" y="24" width="48" height="48" rx="14" fill="#e8f5f2"/>
+      <text x="48" y="56" text-anchor="middle" fill="#08785f" font-size="24" font-weight="800">2</text>
+      <text x="24" y="98" fill="#0f1419" font-size="21" font-weight="800">检查文章</text>
+      <text x="24" y="122" fill="#536471" font-size="15">确认 X 编辑器和图片</text>
+    </g>
+
+    <path d="M658 215h82" stroke="#1d9bf0" stroke-width="5" stroke-linecap="round"/>
+    <path d="M726 199l20 16-20 16" fill="none" stroke="#1d9bf0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <g transform="translate(760 146)">
+      <rect width="212" height="138" rx="22" fill="#0f1419"/>
+      <rect x="24" y="24" width="48" height="48" rx="14" fill="#243447"/>
+      <text x="48" y="56" text-anchor="middle" fill="#b7e1ff" font-size="24" font-weight="800">3</text>
+      <text x="24" y="98" fill="#ffffff" font-size="21" font-weight="800">写入草稿</text>
+      <text x="24" y="122" fill="#cfd9de" font-size="15">填入 X Article 并保存记录</text>
+    </g>
+
+    <path d="M992 215h70" stroke="#f97316" stroke-width="5" stroke-linecap="round"/>
+    <path d="M1048 199l20 16-20 16" fill="none" stroke="#f97316" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <g transform="translate(92 314)">
+      <rect width="1016" height="42" rx="21" fill="#fff1e8"/>
+      <text x="508" y="27" text-anchor="middle" fill="#9b4b12" font-size="16" font-weight="800">xPoster 不会点击发布。请在 X 中检查后，由你自己发布。</text>
+    </g>
+  </g>
+</svg>
