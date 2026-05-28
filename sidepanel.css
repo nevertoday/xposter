@@ -514,13 +514,16 @@ h2 {
   gap: 8px;
   padding: 22px;
   pointer-events: none;
-  border: 1px dashed color-mix(in oklch, var(--ink), transparent 72%);
+  border: 1px dashed color-mix(in oklch, var(--signal), var(--line) 52%);
   border-radius: 7px;
   background:
-    linear-gradient(180deg, color-mix(in oklch, var(--paper), transparent 6%), color-mix(in oklch, var(--paper-2), transparent 10%)),
-    color-mix(in oklch, var(--paper), transparent 10%);
-  color: var(--ink);
+    linear-gradient(180deg, color-mix(in oklch, var(--signal), var(--paper) 94%), color-mix(in oklch, var(--paper), var(--signal) 4%)),
+    var(--paper);
+  color: var(--signal-text);
   text-align: center;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--signal-ink), transparent 82%),
+    0 8px 20px color-mix(in oklch, var(--ink), transparent 93%);
   transform-origin: 50% 50%;
   animation:
     xposter-drop-field-in 220ms var(--ease-out-quint) both,
@@ -532,7 +535,7 @@ h2 {
 }
 
 .draft-drop-target strong {
-  color: var(--ink);
+  color: var(--signal-text);
   font-size: 14px;
   font-weight: 780;
   line-height: 1.2;
@@ -540,7 +543,7 @@ h2 {
 
 .draft-drop-target span {
   max-width: 26rem;
-  color: color-mix(in oklch, var(--muted), var(--ink) 8%);
+  color: color-mix(in oklch, var(--signal-text), var(--muted) 18%);
   font-size: 12px;
   font-weight: 560;
   line-height: 1.4;
@@ -1040,13 +1043,9 @@ h2 {
 }
 
 .composer.drag-active .actions {
-  border-color: color-mix(in oklch, var(--signal), var(--line) 52%);
-  background:
-    linear-gradient(180deg, color-mix(in oklch, var(--signal), var(--paper) 92%), color-mix(in oklch, var(--signal), var(--paper) 97%)),
-    color-mix(in oklch, var(--signal), var(--paper) 94%);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--signal-ink), transparent 78%),
-    0 -7px 16px color-mix(in oklch, var(--signal), transparent 88%);
+  border-color: color-mix(in oklch, var(--line), var(--ink) 16%);
+  background: var(--paper);
+  box-shadow: 0 -8px 18px color-mix(in oklch, var(--ink), transparent 91%);
   opacity: 1;
   pointer-events: none;
 }

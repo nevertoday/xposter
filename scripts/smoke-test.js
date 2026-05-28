@@ -1020,8 +1020,8 @@ assert.ok(
     sidepanelCss.includes(".draft-drop-target") &&
     sidepanelCss.includes(".composer.drag-active .draft-drop-target") &&
     sidepanelCss.includes(".composer.drag-active .actions") &&
-    sidepanelCss.includes("color-mix(in oklch, var(--signal), var(--paper) 92%)") &&
-    sidepanelCss.includes("0 -7px 16px color-mix(in oklch, var(--signal), transparent 88%)") &&
+    sidepanelCss.includes("color-mix(in oklch, var(--signal), var(--paper) 94%)") &&
+    sidepanelCss.includes(".composer.drag-active .actions {\n  border-color: color-mix(in oklch, var(--line), var(--ink) 16%);\n  background: var(--paper);") &&
     sidepanelCss.includes("xposter-queue-item-enter") &&
     sidepanelCss.includes(".draft-queue-item[data-status=\"writing\"] .draft-queue-index") &&
     sidepanelText.includes("function markQueueItemsEntered") &&
