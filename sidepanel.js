@@ -1332,7 +1332,7 @@
     els.languageSelect.innerHTML = i18n.languageOptions()
       .map((option) => {
         const label = option.code === "auto"
-          ? `${localizeText("Automatic")} (${option.nativeName})`
+          ? localizeText("Automatic")
           : option.nativeName;
         return `<option value="${shared.escapeHtml(option.code)}">${shared.escapeHtml(label)}</option>`;
       })

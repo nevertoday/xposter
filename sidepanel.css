@@ -4667,6 +4667,7 @@ textarea:focus-visible,
 
 .setting-row .language-control {
   flex: 0 0 auto;
+  justify-content: flex-end;
 }
 
 .setting-row .language-control > span {
@@ -4674,7 +4675,11 @@ textarea:focus-visible,
 }
 
 .setting-row .language-control select {
-  min-width: 126px;
+  width: 138px;
+  max-width: 138px;
+  padding: 0 26px 0 14px;
+  text-align: center;
+  text-align-last: center;
 }
 
 .setting-row-language {
@@ -5115,8 +5120,7 @@ textarea:focus-visible,
   }
 
   .setting-row-language .language-control select {
-    width: auto;
-    min-width: 112px;
+    width: 132px;
     max-width: 132px;
   }
 
