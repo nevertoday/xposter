@@ -1152,6 +1152,14 @@ h2 {
 }
 
 .draft-editor-shell {
+  --draft-editor-chrome: color-mix(in oklch, var(--paper-2), var(--paper) 58%);
+  --draft-editor-chrome-line: color-mix(in oklch, var(--line), var(--paper) 18%);
+  --draft-editor-control: color-mix(in oklch, var(--ink), var(--muted) 24%);
+  --draft-editor-control-muted: color-mix(in oklch, var(--muted), var(--ink) 24%);
+  --draft-editor-control-bg: color-mix(in oklch, var(--paper), var(--paper-2) 34%);
+  --draft-editor-control-line: color-mix(in oklch, var(--line), transparent 24%);
+  --draft-editor-control-hover: color-mix(in oklch, var(--signal), var(--paper) 94%);
+  --draft-editor-control-active: color-mix(in oklch, var(--signal), var(--paper) 91%);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-row: 3;
@@ -1192,8 +1200,8 @@ h2 {
   min-width: 0;
   min-height: 36px;
   padding: 4px 6px 4px 8px;
-  border-bottom: 1px solid color-mix(in oklch, var(--line), transparent 40%);
-  background: color-mix(in oklch, var(--paper-2), var(--paper) 68%);
+  border-bottom: 1px solid var(--draft-editor-chrome-line, color-mix(in oklch, var(--line), transparent 36%));
+  background: var(--draft-editor-chrome, color-mix(in oklch, var(--paper-2), var(--paper) 58%));
 }
 
 .draft-editor-shell:not([data-mode="edit"]) .draft-editor-formatting {
@@ -1225,7 +1233,7 @@ h2 {
   padding: 0 8px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--ink);
+  color: var(--draft-editor-control, color-mix(in oklch, var(--ink), var(--muted) 24%));
   cursor: pointer;
   font-size: 11px;
   font-weight: 820;
@@ -1238,14 +1246,14 @@ h2 {
 }
 
 .record-edit-toolbar button {
-  border-color: color-mix(in oklch, var(--line), transparent 6%);
-  background: color-mix(in oklch, var(--paper), var(--paper-2) 22%);
+  border-color: color-mix(in oklch, var(--line), transparent 18%);
+  background: color-mix(in oklch, var(--paper), var(--paper-2) 28%);
 }
 
 .draft-editor-formatting button:hover,
 .record-edit-toolbar button:hover {
-  border-color: color-mix(in oklch, var(--signal), transparent 60%);
-  background: color-mix(in oklch, var(--signal), var(--paper) 92%);
+  border-color: color-mix(in oklch, var(--signal), var(--line) 44%);
+  background: var(--draft-editor-control-hover, color-mix(in oklch, var(--signal), var(--paper) 94%));
   color: var(--signal-text);
 }
 
@@ -1613,9 +1621,9 @@ h2 {
   align-items: center;
   gap: 8px;
   padding: 4px 6px 4px 8px;
-  border-top: 1px solid color-mix(in oklch, var(--line), transparent 25%);
-  background: color-mix(in oklch, var(--paper-2), var(--paper) 44%);
-  color: var(--muted);
+  border-top: 1px solid var(--draft-editor-chrome-line, color-mix(in oklch, var(--line), transparent 36%));
+  background: var(--draft-editor-chrome, color-mix(in oklch, var(--paper-2), var(--paper) 58%));
+  color: var(--draft-editor-control-muted, color-mix(in oklch, var(--muted), var(--ink) 24%));
   font-size: 11px;
   font-weight: 720;
 }
@@ -1637,9 +1645,9 @@ h2 {
   align-items: center;
   gap: 4px;
   padding: 0 7px;
-  border: 1px solid color-mix(in oklch, var(--line), transparent 8%);
-  background: color-mix(in oklch, var(--paper), var(--paper-2) 18%);
-  color: color-mix(in oklch, var(--muted), var(--ink) 12%);
+  border: 1px solid var(--draft-editor-control-line, color-mix(in oklch, var(--line), transparent 24%));
+  background: var(--draft-editor-control-bg, color-mix(in oklch, var(--paper), var(--paper-2) 34%));
+  color: var(--draft-editor-control-muted, color-mix(in oklch, var(--muted), var(--ink) 24%));
   cursor: pointer;
   font-size: 10.5px;
   font-weight: 820;
@@ -1653,8 +1661,15 @@ h2 {
 }
 
 .draft-editor-mode-toggle:hover {
-  border-color: color-mix(in oklch, var(--signal), var(--line) 24%);
-  background: color-mix(in oklch, var(--signal), var(--paper) 91%);
+  border-color: color-mix(in oklch, var(--signal), var(--line) 40%);
+  background: var(--draft-editor-control-hover, color-mix(in oklch, var(--signal), var(--paper) 94%));
+  color: var(--signal-text);
+}
+
+.draft-editor-mode-toggle[aria-pressed="true"],
+.draft-editor-shell[data-mode="read"] .draft-editor-mode-toggle {
+  border-color: color-mix(in oklch, var(--signal), var(--line) 38%);
+  background: var(--draft-editor-control-active, color-mix(in oklch, var(--signal), var(--paper) 91%));
   color: var(--signal-text);
 }
 
@@ -1707,6 +1722,12 @@ h2 {
 }
 
 :root[data-theme="dark"] .draft-editor-mode-toggle {
+  background: color-mix(in oklch, var(--paper), var(--paper-2) 22%);
+  color: color-mix(in oklch, var(--muted), var(--ink) 24%);
+}
+
+:root[data-theme="dark"] .draft-editor-mode-toggle[aria-pressed="true"],
+:root[data-theme="dark"] .draft-editor-shell[data-mode="read"] .draft-editor-mode-toggle {
   background: color-mix(in oklch, var(--signal), var(--paper) 84%);
   color: var(--signal-text);
 }
