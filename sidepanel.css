@@ -1153,7 +1153,7 @@ h2 {
 
 .draft-editor-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   grid-row: 3;
   position: relative;
   height: 100%;
@@ -1275,13 +1275,6 @@ h2 {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.draft-editor-toolbar-meta {
-  min-width: 27px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
 }
 
 @media (max-width: 520px) {
@@ -1612,6 +1605,28 @@ h2 {
   white-space: pre-wrap;
 }
 
+.draft-editor-status {
+  grid-row: 3;
+  min-height: 30px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 8px;
+  border-top: 1px solid color-mix(in oklch, var(--line), transparent 25%);
+  background: color-mix(in oklch, var(--paper-2), var(--paper) 44%);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.draft-editor-status > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .draft-editor-mode-toggle {
   min-width: 58px;
   height: 27px;
@@ -1635,19 +1650,6 @@ h2 {
     border-color var(--motion-quick) ease,
     color var(--motion-quick) ease,
     transform var(--motion-quick) var(--ease-out-quart);
-}
-
-.draft-editor-toolbar .draft-editor-mode-toggle {
-  min-width: 27px;
-  width: 27px;
-  height: 27px;
-  display: inline-grid;
-  place-items: center;
-  padding: 0;
-}
-
-.draft-editor-toolbar .draft-editor-mode-toggle [data-mode-label] {
-  display: none;
 }
 
 .draft-editor-mode-toggle:hover {
@@ -1685,17 +1687,13 @@ h2 {
   display: inline;
 }
 
-.draft-editor-toolbar .draft-editor-mode-toggle[aria-pressed="true"] [data-mode-label="write"],
-.draft-editor-shell[data-mode="read"] .draft-editor-toolbar .draft-editor-mode-toggle [data-mode-label="write"] {
-  display: none;
-}
-
 :root[data-theme="dark"] .draft-editor-shell {
   background: var(--paper);
 }
 
 :root[data-theme="dark"] .draft-editor-toolbar,
-:root[data-theme="dark"] .record-edit-toolbar {
+:root[data-theme="dark"] .record-edit-toolbar,
+:root[data-theme="dark"] .draft-editor-status {
   background: color-mix(in oklch, var(--paper-2), var(--paper) 38%);
 }
 

@@ -960,8 +960,8 @@ assert.ok(
     !sidepanelHtml.includes('data-editor-mode="read"') &&
     !sidepanelHtml.includes('data-editor-mode="check"') &&
     !sidepanelCss.includes(".draft-brief") &&
-    !sidepanelCss.includes(".draft-editor-status"),
-  "draft editor should keep one toolbar Write/Read toggle and avoid duplicate recognized-summary, status, or Check rows"
+    sidepanelCss.includes(".draft-editor-status"),
+  "draft editor should keep one status Write/Read toggle and avoid duplicate recognized-summary or Check rows"
 );
 assert.ok(
   contentScriptText.includes("message.options || {}"),
@@ -1013,8 +1013,9 @@ assert.ok(
     "src/sidepanel-messages.js",
     "src/sidepanel-patterns.js",
     'id="draftEditorToolbar"',
+    'id="draftEditorStatus"',
     'id="draftEditorModeToggle"',
-    'class="draft-editor-toolbar-meta"',
+    'id="draftEditorStats"',
     "data-editor-mode-toggle",
     'class="editor-command-icon"',
     'id="draftInlinePreview"',
@@ -1028,8 +1029,6 @@ assert.ok(
       ">Table</button>",
       "vendor/codemirror-editor.bundle.js",
       'id="draftEditorModeLabel"',
-      'id="draftEditorStatus"',
-      'id="draftEditorStats"',
       'data-editor-mode="edit"',
       'data-editor-mode="read"',
       'data-editor-mode="check"',
@@ -1047,6 +1046,7 @@ assert.ok(
       "return /^(https?|mailto|tel|ftp)$/i.test(schemeMatch[1]) ? raw : \"\";",
       "function markdownSegmentCounts",
       "function editorStatsText",
+      "function updateDraftEditorStatus",
       "function updateEditorModeToggle",
       "button.disabled = !isEdit || queueModeActive()",
       "function setDraftText(markdown",
@@ -1063,6 +1063,7 @@ assert.ok(
       "function highlightInlineMarkdownSyntax",
       "function syncDraftSyntaxScroll",
       'els.markdown.addEventListener("scroll", syncDraftSyntaxScroll)',
+      "if (length) parts.push(formatCompactUnit(length, \"char\", \"chars\", \"字符\"));",
       "editorStatsText(text, markdownSegmentCounts(text))",
       "function translateVisibleWorkspace()",
       "translateVisibleWorkspace();",
@@ -1150,7 +1151,7 @@ assert.ok(
       "font-family: var(--draft-content-font);",
       ".draft-editor-mode-toggle",
       ".draft-editor-formatting button .editor-command-icon",
-      ".draft-editor-toolbar .draft-editor-mode-toggle [data-mode-label]",
+      ".draft-editor-status > span",
       "stroke-linecap: round;",
       "@media (max-width: 520px)",
       ".draft-editor-formatting {\n    overflow-x: auto;\n    flex-wrap: nowrap;"
@@ -1167,14 +1168,13 @@ assert.ok(
       ".composer {\n  position: relative;\n  min-height: 0;",
       ".composer {\n  position: relative;\n  height: 100%;\n  min-height: 0;\n  align-self: stretch;\n  align-content: start;",
       "grid-template-rows: auto auto auto auto;",
-      ".draft-editor-status span {\n",
       "#markdown {\n  position: relative;\n  z-index: 1;\n  color: transparent;",
       ".record-edit-dialog textarea {\n  position: relative;\n  z-index: 1;\n  color: transparent;"
     ]) &&
     excludesAll(sidepanelCss, [
       "font-family: ui-serif, Georgia, \"Times New Roman\", serif;"
     ]),
-  "side panel should use a lightweight native textarea editor with MiniGFM read preview, one toolbar mode toggle, responsive controls, and adapter-based draft reads"
+  "side panel should use a lightweight native textarea editor with MiniGFM read preview, one status-bar mode toggle, responsive controls, and adapter-based draft reads"
 );
 assert.ok(
   sidepanelText.includes("const isCompact = !value.trim() || (value.length < 420 && meaningfulLines <= 8 && !hasRichBlocks);") &&

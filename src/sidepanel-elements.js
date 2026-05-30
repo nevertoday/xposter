@@ -2,7 +2,9 @@
   const elementIds = [
     "markdown",
     "draftEditorToolbar",
+    "draftEditorStatus",
     "draftEditorModeToggle",
+    "draftEditorStats",
     "draftInlinePreview",
     "draftInlinePreviewHead",
     "draftInlinePreviewTitle",

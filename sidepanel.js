@@ -398,6 +398,12 @@
     button.title = localizeText(nextMode === "read" ? "Read" : "Write");
   }
 
+  function updateDraftEditorStatus() {
+    if (!els.draftEditorStats) return;
+    const text = draftText();
+    setLocalizedText(els.draftEditorStats, editorStatsText(text, markdownSegmentCounts(text)));
+  }
+
   function updateDraftEditorDensity(text = draftText()) {
     if (!els.draftEditorShell) return;
     const value = String(text || "");
@@ -547,6 +553,7 @@
     else if (syntax === "none") cancelDeferredDraftSyntaxHighlight();
     else renderDraftSyntaxHighlight(text);
     updateDraftEditorDensity(text);
+    updateDraftEditorStatus();
     if (preview) updateInlinePreview();
   }
 
@@ -562,6 +569,7 @@
     clearProgrammaticHistoryOnTextInput(event, els.markdown);
     renderDraftSyntaxHighlight();
     updateDraftEditorDensity();
+    updateDraftEditorStatus();
     updateInlinePreview();
     scheduleSaveDraft();
     scheduleAnalyzeDraft();
@@ -606,6 +614,7 @@
     els.draftEditorToolbar?.querySelectorAll("[data-editor-command]").forEach((button) => {
       button.disabled = !isEdit || queueModeActive();
     });
+    updateDraftEditorStatus();
     if (isEdit) renderDraftSyntaxHighlight();
     if (isPreview) updateInlinePreview();
   }
@@ -1177,6 +1186,7 @@
     translateVisibleWorkspace();
     populateLanguageSelect();
     updateDraftBrief();
+    updateDraftEditorStatus();
     if (recordHistoryRestored || els.recordsPanel?.classList.contains("active")) renderRecordHistory();
     if (persist && hasChromeApi()) {
       chrome.storage.local.set({ [STORAGE_LANGUAGE]: i18n?.preference?.() || currentLanguage });
@@ -2058,6 +2068,7 @@
     if (els.draftQueue) els.draftQueue.hidden = !hasQueue;
     if (els.draftEditorShell) els.draftEditorShell.hidden = hasQueue;
     if (els.draftEditorToolbar) els.draftEditorToolbar.hidden = hasQueue;
+    if (els.draftEditorStatus) els.draftEditorStatus.hidden = hasQueue;
     if (hasQueue) {
       if (els.draftEditorInputWrap) {
         els.draftEditorInputWrap.hidden = true;
@@ -2074,6 +2085,7 @@
     } else {
       setDraftEditorMode(draftEditorMode);
     }
+    updateDraftEditorStatus();
     updateDraftBrief();
   }
 
@@ -2674,6 +2686,7 @@
       updateWriteButton();
       updateProgressiveSections();
       syncDraftMediaAlert(null);
+      updateDraftEditorStatus();
       if (!queueModeActive()) {
         setDraftDropStatus("Markdown draft", "Paste Markdown here, choose a file, or drop .md files.", "idle");
       }
@@ -2704,6 +2717,7 @@
       updateWriteButton();
       updateProgressiveSections();
       syncDraftMediaAlert(mediaUploadEstimate(parsed));
+      updateDraftEditorStatus();
       setDraftDropStatus("Markdown loaded", draftReadyDetail(markdown.length, counts), "done");
     } catch (error) {
       log(`Could not analyze draft: ${error?.message || error}`);
