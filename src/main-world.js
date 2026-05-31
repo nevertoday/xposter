@@ -431,6 +431,43 @@
     return entities;
   }
 
+  function mediaIdFromEntityData(data = {}) {
+    const item = data?.mediaItems?.[0] || data?.media_items?.[0] || data?.mediaItem || data?.media_item || data;
+    const mediaId =
+      item?.mediaId ||
+      item?.media_id ||
+      item?.media_id_string ||
+      data?.mediaId ||
+      data?.media_id ||
+      data?.media_id_string ||
+      null;
+    return mediaId == null || mediaId === "" ? null : String(mediaId);
+  }
+
+  function findNewMediaUpload(contentState, existingEntities) {
+    let pending = null;
+    let complete = null;
+    contentState.getBlockMap().forEach((block, blockKey) => {
+      if (complete || block.getType() !== "atomic") return;
+      block.findEntityRanges(
+        (character) => Boolean(character.getEntity()),
+        (start) => {
+          if (complete) return;
+          const entityKey = block.getCharacterList().get(start)?.getEntity?.();
+          if (!entityKey || existingEntities.has(entityKey)) return;
+          try {
+            const entity = contentState.getEntity(entityKey);
+            if (entity.getType() !== "MEDIA") return;
+            const candidate = { entityKey, blockKey, mediaId: mediaIdFromEntityData(entity.getData()) };
+            if (candidate.mediaId) complete = candidate;
+            else pending ||= candidate;
+          } catch {}
+        }
+      );
+    });
+    return complete || pending;
+  }
+
   function placeSelectionAtMarker(draftNode, marker) {
     const editorState = draftNode.props.editorState;
     const SelectionState = editorState.getSelection().constructor;
@@ -465,6 +502,7 @@
     );
     const deadline = Date.now() + timeoutMs;
     let nextProgressAt = Date.now() + MEDIA_UPLOAD_PROGRESS_HEARTBEAT_MS;
+    let pendingUpload = null;
     while (Date.now() < deadline) {
       throwIfCancelled();
       await sleep(350);
@@ -476,32 +514,15 @@
       }
       draftNode = findDraftStateNode() || draftNode;
       const contentState = draftNode.props.editorState.getCurrentContent();
-      let found = null;
-      contentState.getBlockMap().forEach((block, blockKey) => {
-        if (found || block.getType() !== "atomic") return;
-        block.findEntityRanges(
-          (character) => Boolean(character.getEntity()),
-          (start) => {
-            const entityKey = block.getCharacterList().get(start)?.getEntity?.();
-            if (!entityKey || before.has(entityKey)) return;
-            try {
-              const entity = contentState.getEntity(entityKey);
-              if (entity.getType() !== "MEDIA") return;
-              const data = entity.getData();
-              const item = data?.mediaItems?.[0] || data?.media_items?.[0];
-              const mediaId = item?.mediaId || item?.media_id || null;
-              found = { entityKey, blockKey, mediaId };
-            } catch {}
-          }
-        );
-      });
-      if (found) {
+      const found = findNewMediaUpload(contentState, before);
+      if (found?.mediaId) {
         existingAtomicBlocks.add(found.blockKey);
         return { ok: true, ...found };
       }
+      if (found) pendingUpload = found;
     }
 
-    return { ok: false, error: MEDIA_UPLOAD_TIMEOUT_ERROR, timeout: true, timeoutMs };
+    return { ok: false, error: MEDIA_UPLOAD_TIMEOUT_ERROR, timeout: true, timeoutMs, pendingEntity: Boolean(pendingUpload) };
   }
 
   function replaceMarkerText(draftNode, marker, text) {

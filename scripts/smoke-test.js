@@ -157,6 +157,8 @@ const contentMediaHelperStart = contentScriptText.indexOf("  function articleMed
 const contentMediaHelperEnd = contentScriptText.indexOf("  function mediaLimitText");
 const sidepanelMediaHelperStart = sidepanelText.indexOf("  function mediaUploadEstimate");
 const sidepanelMediaHelperEnd = sidepanelText.indexOf("  function mediaNoteText");
+const mainMediaHelperStart = mainWorldText.indexOf("  function mediaIdFromEntityData");
+const mainMediaHelperEnd = mainWorldText.indexOf("  function placeSelectionAtMarker");
 const statusSandbox = {
   document: { body: {}, documentElement: {} },
   getComputedStyle: () => ({ backgroundColor: "rgb(18, 26, 34)" }),
@@ -169,6 +171,7 @@ const mediaSandbox = {
   atParsed: mediaAtLimitParsed,
   overParsed: mediaOverLimitParsed
 };
+const mainMediaSandbox = {};
 
 assert.ok(statusHelperStart >= 0 && statusHelperEnd > statusHelperStart, "status helper functions should be present");
 assert.ok(
@@ -177,6 +180,10 @@ assert.ok(
     sidepanelMediaHelperStart >= 0 &&
     sidepanelMediaHelperEnd > sidepanelMediaHelperStart,
   "media estimate helper functions should be present"
+);
+assert.ok(
+  mainMediaHelperStart >= 0 && mainMediaHelperEnd > mainMediaHelperStart,
+  "main-world media upload helper functions should be present"
 );
 vm.runInNewContext(
   `const state = { language: "zh" };
@@ -213,6 +220,27 @@ vm.runInNewContext(
    const sidepanelOver = mediaUploadEstimate(overParsed);
    this.mediaEstimates = { contentNear, contentAt, contentOver, sidepanelNear, sidepanelAt, sidepanelOver };`,
   mediaSandbox
+);
+vm.runInNewContext(
+  `${mainWorldText.slice(mainMediaHelperStart, mainMediaHelperEnd)}
+   function fakeBlock(entityKey) {
+     return {
+       getType: () => "atomic",
+       findEntityRanges: (filter, callback) => callback(0),
+       getCharacterList: () => ({ get: () => ({ getEntity: () => entityKey }) })
+     };
+   }
+   function fakeContentState(data, entityKey = "entity-1") {
+     return {
+       getBlockMap: () => new Map([["block-1", fakeBlock(entityKey)]]),
+       getEntity: () => ({ getType: () => "MEDIA", getData: () => data })
+     };
+   }
+   this.pendingUpload = findNewMediaUpload(fakeContentState({ mediaItems: [{}] }), new Set());
+   this.completeUpload = findNewMediaUpload(fakeContentState({ mediaItems: [{ mediaId: "1234567890" }] }), new Set());
+   this.snakeCaseUpload = findNewMediaUpload(fakeContentState({ media_items: [{ media_id: "0987654321" }] }), new Set());
+   this.existingUpload = findNewMediaUpload(fakeContentState({ mediaItems: [{ mediaId: "1234567890" }] }), new Set(["entity-1"]));`,
+  mainMediaSandbox
 );
 
 assert.equal(parsed.title, "xPoster live smoke test", "frontmatter title should parse");
@@ -601,6 +629,10 @@ assert.ok(
     mainWorldText.includes("const MEDIA_UPLOAD_MAX_TIMEOUT_MS = 150000") &&
     mainWorldText.includes("const MEDIA_UPLOAD_PROGRESS_HEARTBEAT_MS = 15000") &&
     mainWorldText.includes("progress(`Uploading image ${index}/${total}...`)") &&
+    mainWorldText.includes("function findNewMediaUpload") &&
+    mainWorldText.includes("if (candidate.mediaId) complete = candidate;") &&
+    mainWorldText.includes("else pending ||= candidate;") &&
+    mainWorldText.includes("if (found?.mediaId)") &&
     contentScriptText.includes("const MAIN_WORLD_SILENCE_TIMEOUT_MS = 180000") &&
     contentScriptText.includes("}, MAIN_WORLD_SILENCE_TIMEOUT_MS);") &&
     mainWorldText.includes("X media upload took too long. X may be throttling this draft") &&
@@ -609,6 +641,22 @@ assert.ok(
     !mainWorldText.includes("Retrying image ${index + 1}"),
   "main-world image uploads should wait longer for X and return a recoverable timeout message"
 );
+assert.equal(mainMediaSandbox.pendingUpload?.entityKey, "entity-1", "main-world should observe a pending X media placeholder entity");
+assert.equal(mainMediaSandbox.pendingUpload?.blockKey, "block-1", "main-world should observe a pending X media placeholder block");
+assert.equal(mainMediaSandbox.pendingUpload?.mediaId, null, "main-world should not treat X media placeholders as completed uploads");
+assert.equal(mainMediaSandbox.completeUpload?.entityKey, "entity-1", "main-world should report the completed X media entity");
+assert.equal(mainMediaSandbox.completeUpload?.blockKey, "block-1", "main-world should report the completed X media block");
+assert.equal(
+  mainMediaSandbox.completeUpload?.mediaId,
+  "1234567890",
+  "main-world should wait for a new media entity to receive mediaId before starting the next Markdown image"
+);
+assert.equal(
+  mainMediaSandbox.snakeCaseUpload?.mediaId,
+  "0987654321",
+  "main-world should recognize X media ids from snake_case entity data"
+);
+assert.equal(mainMediaSandbox.existingUpload, null, "main-world should ignore media entities that existed before the current upload step");
 assert.ok(
   contentScriptText.includes("image upload(s) timed out in X") &&
     sidepanelText.includes("image upload(s) timed out in X") &&
