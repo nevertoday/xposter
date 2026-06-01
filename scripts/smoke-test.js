@@ -165,10 +165,16 @@ const mainMediaHelperStart = mainWorldText.indexOf("  function normalizeMediaIdV
 const mainMediaHelperEnd = mainWorldText.indexOf("  function placeSelectionAtMarker");
 const mainMarkerHelperStart = mainWorldText.indexOf("  function findMarkerLocation");
 const mainMarkerHelperEnd = mainWorldText.indexOf("  function kickRender");
+const originalImporterHelperStart = contentScriptText.indexOf("  function detectOriginalImporterResidue");
+const originalImporterHelperEnd = contentScriptText.indexOf("  function normalizeText");
 const articleRouteHelperStart = contentScriptText.indexOf("  function isArticleRoute");
-const articleRouteHelperEnd = contentScriptText.indexOf("  function collectTargetContext");
+const articleRouteHelperEnd = contentScriptText.indexOf("  async function collectTargetContext");
 const articleExportRouteHelperStart = contentScriptText.indexOf("  function isArticleExportRoute");
 const articleExportRouteHelperEnd = contentScriptText.indexOf("  function scheduleArticleExportSync");
+const articleExportContainerHelperStart = contentScriptText.indexOf("  function articleExportContainer");
+const articleExportContainerHelperEnd = contentScriptText.indexOf("  function articleDockInlineEnd");
+const articleExportTitleHelperStart = contentScriptText.indexOf("  function detectArticleExportTitleNode");
+const articleExportTitleHelperEnd = contentScriptText.indexOf("  function detectArticleExportTitle", articleExportTitleHelperStart + 1);
 const statusSandbox = {
   document: { body: {}, documentElement: {} },
   getComputedStyle: () => ({ backgroundColor: "rgb(18, 26, 34)" }),
@@ -183,6 +189,7 @@ const mediaSandbox = {
 };
 const mainMediaSandbox = {};
 const mainMarkerSandbox = {};
+const originalImporterSandbox = {};
 
 assert.ok(statusHelperStart >= 0 && statusHelperEnd > statusHelperStart, "status helper functions should be present");
 assert.ok(
@@ -201,10 +208,18 @@ assert.ok(
   "main-world marker cleanup and relocation helper functions should be present"
 );
 assert.ok(
+  originalImporterHelperStart >= 0 && originalImporterHelperEnd > originalImporterHelperStart,
+  "original importer cleanup helpers should be present"
+);
+assert.ok(
   articleRouteHelperStart >= 0 &&
     articleRouteHelperEnd > articleRouteHelperStart &&
     articleExportRouteHelperStart >= 0 &&
-    articleExportRouteHelperEnd > articleExportRouteHelperStart,
+    articleExportRouteHelperEnd > articleExportRouteHelperStart &&
+    articleExportContainerHelperStart >= 0 &&
+    articleExportContainerHelperEnd > articleExportContainerHelperStart &&
+    articleExportTitleHelperStart >= 0 &&
+    articleExportTitleHelperEnd > articleExportTitleHelperStart,
   "article export route helpers should be present"
 );
 vm.runInNewContext(
@@ -227,6 +242,64 @@ vm.runInNewContext(
    this.state = state;
    this.statusHelpers = { statusThemeFromPage, statusProgressForText, translateContentText, articleExportLabel, articleExportShortLabel };`,
   statusSandbox
+);
+vm.runInNewContext(
+  `const ORIGINAL_IMPORTER_MARKERS = [
+     { label: "original import button", selector: "#__xmp_import_btn__, [id*='__xmp_import_btn__']" },
+     { label: "original vault prompt", selector: "#__xmp_vault_prompt__" },
+     { label: "original drop hint", selector: "#__xmp_drop_hint__" },
+     { label: "original drop hint style", selector: "#__xmp_drop_hint_anim__" },
+     { label: "original import style", selector: "#__xmp_import_btn_style__" },
+     { label: "original status banner", selector: "#__x_md_paste_banner__" },
+     { label: "original page offset style", selector: "#__x_md_paste_offset_style__" }
+   ];
+   const ORIGINAL_IMPORTER_BODY_CLASSES = [
+     { label: "original banner class", className: "__xmp_banner_visible" }
+   ];
+   function makeClassList(values = []) {
+     const classes = new Set(values);
+     return {
+       contains: (className) => classes.has(className),
+       remove: (className) => classes.delete(className),
+       values: () => Array.from(classes)
+     };
+   }
+   function makeNode(id) {
+     return { id, removed: false, remove() { this.removed = true; } };
+   }
+   const legacyNodes = [
+     makeNode("__xmp_import_btn__"),
+     makeNode("prefix__xmp_import_btn__suffix"),
+     makeNode("__xmp_vault_prompt__"),
+     makeNode("__xmp_drop_hint__"),
+     makeNode("__xmp_drop_hint_anim__"),
+     makeNode("__xmp_import_btn_style__"),
+     makeNode("__x_md_paste_banner__"),
+     makeNode("__x_md_paste_offset_style__")
+   ];
+   const xposterNode = makeNode("__xposter_import_button__");
+   const allNodes = [...legacyNodes, xposterNode];
+   function matchesSelector(node, selector) {
+     return selector.split(",").map((part) => part.trim()).some((part) => {
+       if (/^#/.test(part)) return node.id === part.slice(1);
+       if (part === "[id*='__xmp_import_btn__']") return node.id.includes("__xmp_import_btn__");
+       return false;
+     });
+   }
+   const document = {
+     body: { classList: makeClassList(["__xmp_banner_visible", "__xposter_status_visible"]) },
+     querySelector: (selector) => allNodes.find((node) => !node.removed && matchesSelector(node, selector)) || null,
+     querySelectorAll: (selector) => allNodes.filter((node) => !node.removed && matchesSelector(node, selector))
+   };
+   const window = { setTimeout: (fn) => { fn(); return 1; } };
+   ${contentScriptText.slice(originalImporterHelperStart, originalImporterHelperEnd)}
+   this.beforeCleanup = detectOriginalImporterResidue();
+   this.cleanedMarkers = cleanupOriginalImporterResidue();
+   this.afterCleanup = detectOriginalImporterResidue();
+   this.remainingLegacy = legacyNodes.filter((node) => !node.removed).map((node) => node.id);
+   this.xposterStillPresent = !xposterNode.removed;
+   this.bodyClasses = document.body.classList.values();`,
+  originalImporterSandbox
 );
 const articleRouteSandbox = { URL };
 vm.runInNewContext(
@@ -269,6 +342,84 @@ vm.runInNewContext(
    };`,
   articleRouteSandbox
 );
+const articleExportDomSandbox = { Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 } };
+vm.runInNewContext(
+  `const ARTICLE_EXPORT_ID = "__xposter_article_export__";
+   const ARTICLE_EXPORT_LONGFORM_SELECTOR = "[data-testid='twitterArticleReadView'],[data-testid='twitter-article-title'],[data-testid='twitterArticleRichTextView'],[data-testid='longformRichTextComponent']";
+   const document = { body: { name: "body", children: [], parentElement: null } };
+   function normalizeText(value) {
+     return String(value || "").replace(/\\s+/g, " ").trim();
+   }
+   function nodeMatches(node, selector) {
+     return selector.split(",").map((part) => part.trim()).some((part) => {
+       if (!part) return false;
+       if (part === "article" || part === "main article" || part === "section" || part === "div") return node.tagName === part.split(" ").pop().toUpperCase();
+       if (part === "[data-testid='cellInnerDiv']") return node.testid === "cellInnerDiv";
+       if (part === "[data-testid='twitterArticleReadView']") return node.testid === "twitterArticleReadView";
+       if (part === "[data-testid='twitter-article-title']") return node.testid === "twitter-article-title";
+       if (part === "[data-testid='twitterArticleRichTextView']") return node.testid === "twitterArticleRichTextView";
+       if (part === "[data-testid='longformRichTextComponent']") return node.testid === "longformRichTextComponent";
+       if (part === "h1" || part === "h2") return node.tagName === part.toUpperCase();
+       if (part === "[role='heading']") return node.role === "heading";
+       return false;
+     });
+   }
+   function makeNode({ tag = "div", text = "", testid = "", role = "", rect = { width: 560, height: 180 }, parent = null } = {}) {
+     const node = {
+       tagName: tag.toUpperCase(),
+       textContent: text,
+       innerText: text,
+       testid,
+       role,
+       parentElement: parent,
+       children: [],
+       id: "",
+       matches(selector) { return nodeMatches(node, selector); },
+       closest(selector) {
+         for (let current = node; current; current = current.parentElement) {
+           if (nodeMatches(current, selector)) return current;
+         }
+         return null;
+       },
+       querySelector(selector) {
+         return node.querySelectorAll(selector)[0] || null;
+       },
+       querySelectorAll(selector) {
+         const found = [];
+         const walk = (current) => {
+           for (const child of current.children) {
+             if (nodeMatches(child, selector)) found.push(child);
+             walk(child);
+           }
+         };
+         walk(node);
+         return found;
+       },
+       getBoundingClientRect() { return rect; }
+     };
+     if (parent) parent.children.push(node);
+     return node;
+   }
+   function articleNodeReadableText(node) {
+     return node?.innerText || node?.textContent || "";
+   }
+   ${contentScriptText.slice(articleExportContainerHelperStart, articleExportContainerHelperEnd)}
+   ${contentScriptText.slice(articleExportTitleHelperStart, articleExportTitleHelperEnd)}
+   const pageRoot = makeNode({ tag: "div", text: "Page chrome and hidden shortcuts", parent: document.body, rect: { width: 1200, height: 800 } });
+   const isolatedArticleLink = makeNode({ tag: "a", text: "", parent: pageRoot, rect: { width: 36, height: 36 } });
+   const hiddenHeading = makeNode({ tag: "h2", text: "To view keyboard shortcuts, press question mark", parent: pageRoot, role: "heading", rect: { width: 1, height: 1 } });
+   const tweet = makeNode({ tag: "article", text: "Real article text with all longform children and metadata", parent: pageRoot, testid: "tweet", rect: { width: 598, height: 1200 } });
+   const readView = makeNode({ tag: "div", text: "Readable longform body", parent: tweet, testid: "twitterArticleReadView", rect: { width: 566, height: 1000 } });
+   const title = makeNode({ tag: "div", text: "Real X Article Title", parent: readView, testid: "twitter-article-title", rect: { width: 566, height: 132 } });
+   const bodyHeading = makeNode({ tag: "h2", text: "Body Section", parent: readView, rect: { width: 566, height: 36 } });
+   this.articleExportDomResults = {
+     isolatedContainer: articleExportContainer(isolatedArticleLink),
+     longformContainerIsNotPageRoot: articleExportContainer(readView) !== pageRoot,
+     titleText: detectArticleExportTitleNode(tweet)?.innerText || "",
+     hiddenRejected: isReadableArticleTitleNode(hiddenHeading)
+   };`,
+  articleExportDomSandbox
+);
 vm.runInNewContext(
   `const X_ARTICLE_MEDIA_SOFT_LIMIT = 25;
    const X_ARTICLE_MEDIA_HEADROOM_THRESHOLD = 21;
@@ -299,12 +450,42 @@ vm.runInNewContext(
        getEntity: () => ({ getType: () => "MEDIA", getData: () => data })
      };
    }
+   function fakeContentStateFromEntities(entries) {
+     const entityData = new Map(entries.map((entry) => [entry.entityKey, entry.data]));
+     return {
+       getBlockMap: () => new Map(entries.map((entry) => [entry.blockKey, fakeBlock(entry.entityKey)])),
+       getEntity: (entityKey) => ({ getType: () => "MEDIA", getData: () => entityData.get(entityKey) })
+     };
+   }
    this.pendingUpload = findNewMediaUpload(fakeContentState({ mediaItems: [{}] }), new Set());
    this.completeUpload = findNewMediaUpload(fakeContentState({ mediaItems: [{ mediaId: "1234567890" }] }), new Set());
    this.snakeCaseUpload = findNewMediaUpload(fakeContentState({ media_items: [{ media_id: "0987654321" }] }), new Set());
    this.nestedMediaKeyUpload = findNewMediaUpload(fakeContentState({ uploadResult: { media_key: "3_1122334455" } }), new Set());
    this.restIdUpload = findNewMediaUpload(fakeContentState({ result: { rest_id: "9988776655" } }), new Set());
-   this.existingUpload = findNewMediaUpload(fakeContentState({ mediaItems: [{ mediaId: "1234567890" }] }), new Set(["entity-1"]));`,
+   this.existingUpload = findNewMediaUpload(fakeContentState({ mediaItems: [{ mediaId: "1234567890" }] }), new Set(["entity-1"]));
+   this.ignoredCompleteUpload = findNewMediaUpload(fakeContentStateFromEntities([
+     { blockKey: "old-block", entityKey: "old-entity", data: { mediaId: "1111111111" } },
+     { blockKey: "new-block", entityKey: "new-entity", data: { mediaItems: [{}] } }
+   ]), new Set(), new Set(["old-block"]));
+   this.ignoredOnlyUpload = findNewMediaUpload(fakeContentStateFromEntities([
+     { blockKey: "old-block", entityKey: "old-entity", data: { mediaId: "1111111111" } }
+   ]), new Set(), new Set(["old-block"]));
+   const cyclic = { state: "pending" };
+   cyclic.self = cyclic;
+   this.pendingSignature = mediaEntityDataSignature({ mediaItems: [{}], phase: "pending" });
+   this.readySignature = mediaEntityDataSignature({ mediaItems: [{ processing: "ready" }], phase: "ready" });
+   this.cyclicSignature = mediaEntityDataSignature(cyclic);
+   const refreshUpload = { blockKey: "pending-block", entityKey: "pending-entity", mediaId: null };
+   refreshUploadMediaId({
+     props: {
+       editorState: {
+         getCurrentContent: () => fakeContentStateFromEntities([
+           { blockKey: "pending-block", entityKey: "pending-entity", data: { uploadResult: { media_key: "3_2233445566" } } }
+         ])
+       }
+     }
+   }, refreshUpload);
+   this.refreshedUpload = refreshUpload;`,
   mainMediaSandbox
 );
 vm.runInNewContext(
@@ -434,7 +615,22 @@ vm.runInNewContext(
    }], new Set());
    const embeddedRelocateMap = embeddedRelocateDraft.props.editorState.getCurrentContent().getBlockMap();
    this.embeddedRelocateKeys = embeddedRelocateMap.keys();
-   this.embeddedRelocateTexts = embeddedRelocateMap.texts();`,
+   this.embeddedRelocateTexts = embeddedRelocateMap.texts();
+   const pendingRelocateDraft = fakeDraft([
+     ["p1", fakeBlock("p1", "unstyled", "Intro")],
+     ["marker", fakeBlock("marker", "unstyled", embeddedMarker)],
+     ["p2", fakeBlock("p2", "unstyled", "Outro")],
+     ["pending-img", fakeBlock("pending-img", "atomic", " ", "pending-entity")],
+     ["other-img", fakeBlock("other-img", "atomic", " ", "other-entity")]
+   ]);
+   this.pendingRelocateResult = relocateImages(pendingRelocateDraft, [{
+     marker: embeddedMarker,
+     blockKey: "pending-img",
+     markerBlock: "marker",
+     markerExact: true,
+     entityKey: null
+   }], new Set());
+   this.pendingRelocateKeys = pendingRelocateDraft.props.editorState.getCurrentContent().getBlockMap().keys();`,
   mainMarkerSandbox
 );
 
@@ -508,6 +704,14 @@ assert.equal(shared.parseDataUri(`data:image/png;base64,${"A".repeat(24 * 1024 *
 assert.ok(
   contentScriptText.includes('showStatus(formatCompletionMessage(summary), "done", 7000)'),
   "successful Markdown writes should finish with a done status even when images stay as links"
+);
+assert.ok(
+    contentScriptText.includes("statusTimer: 0") &&
+    contentScriptText.includes("window.clearTimeout(state.statusTimer);") &&
+    contentScriptText.includes("if (state.statusTimer !== timer) return;") &&
+    contentScriptText.includes("state.statusTimer = timer;") &&
+    sidepanelText.includes('latestProgress.state !== "complete" && latestProgress.state !== "error" && latestProgress.state !== "cancelled"'),
+  "content-script status timers and sidepanel idle events should not hide active or terminal import progress"
 );
 assert.ok(
   contentScriptText.includes('collectMediaFailures(new Map([[coverSegment, coverResult]]), "cover")') &&
@@ -769,6 +973,13 @@ assert.ok(
     'longformRoots',
     'articleRoots',
     'if (!containerHasReadableArticleSignal(container)) return null;',
+    'const article = element?.closest?.("article") || null;',
+    'const longform = element?.closest?.(ARTICLE_EXPORT_LONGFORM_SELECTOR) || null;',
+    'if (!article && !longform) return null;',
+    'if (node === boundary || node.matches?.("article")) break;',
+    'function isReadableArticleTitleNode',
+    'const xTitle = container?.querySelector?.("[data-testid=\'twitter-article-title\']");',
+    'return !rect || (rect.width >= 32 && rect.height >= 12);',
     'function markdownForArticleNode',
     'function detectArticleExportTitleNode',
     'function removeDuplicateArticleTitleParts',
@@ -884,6 +1095,25 @@ assert.equal(
   100,
   "completed status should fill the status background"
 );
+assert.equal(originalImporterSandbox.beforeCleanup.detected, true, "old Markdown importer residue should be detectable before cleanup");
+assert.equal(originalImporterSandbox.afterCleanup.detected, false, "stale old Markdown importer residue should be removable before preflight blocking");
+assert.deepEqual(
+  Array.from(originalImporterSandbox.remainingLegacy),
+  [],
+  "cleanup should remove known old Markdown importer DOM and styles"
+);
+assert.ok(
+  originalImporterSandbox.cleanedMarkers.includes("original import button") &&
+    originalImporterSandbox.cleanedMarkers.includes("original banner class") &&
+    contentScriptText.includes("currentOriginalImporterResidue({ cleanup: true })"),
+  "page-status and diagnostics should attempt stale old-importer cleanup before reporting blockers"
+);
+assert.equal(originalImporterSandbox.xposterStillPresent, true, "cleanup should not remove current xPoster UI");
+assert.deepEqual(
+  Array.from(originalImporterSandbox.bodyClasses),
+  ["__xposter_status_visible"],
+  "cleanup should remove only old importer body classes"
+);
 assert.equal(statusSandbox.statusHelpers.translateContentText("Preparing Markdown..."), "正在准备 Markdown...", "X page status details should follow the selected language");
 assert.equal(
   statusSandbox.statusHelpers.translateContentText("Uploading image 4/5... waiting for X to finish."),
@@ -922,6 +1152,21 @@ assert.deepEqual(
     longformFallback: true
   },
   "article export tools should mount on modern readable X Article URLs while staying out of compose routes"
+);
+assert.deepEqual(
+  {
+    isolatedContainer: articleExportDomSandbox.articleExportDomResults.isolatedContainer,
+    longformContainerIsNotPageRoot: articleExportDomSandbox.articleExportDomResults.longformContainerIsNotPageRoot,
+    titleText: articleExportDomSandbox.articleExportDomResults.titleText,
+    hiddenRejected: articleExportDomSandbox.articleExportDomResults.hiddenRejected
+  },
+  {
+    isolatedContainer: null,
+    longformContainerIsNotPageRoot: true,
+    titleText: "Real X Article Title",
+    hiddenRejected: false
+  },
+  "article export should ignore page chrome links, prefer the real X article title, and reject hidden shortcut headings"
 );
 statusSandbox.state.language = "zh-TW";
 assert.equal(statusSandbox.statusHelpers.translateContentText("Preparing Markdown..."), "正在準備 Markdown...", "X page status details should support Traditional Chinese");
@@ -976,32 +1221,103 @@ assert.equal(
   "Text before __XPOSTER_newaa_IMAGE_1__ text after",
   "embedded marker relocation should not drop surrounding article text"
 );
+assert.equal(mainMarkerSandbox.pendingRelocateResult.moved, 1, "pending media uploads should relocate by their observed block key");
+assert.equal(
+  JSON.stringify(mainMarkerSandbox.pendingRelocateKeys),
+  JSON.stringify(["p1", "pending-img", "p2", "other-img"]),
+  "pending media relocation should not fall back to the wrong media block when no mediaId exists yet"
+);
 assert.ok(
     mainWorldText.includes("const MEDIA_UPLOAD_BASE_TIMEOUT_MS = 90000") &&
     mainWorldText.includes("const MEDIA_UPLOAD_MAX_TIMEOUT_MS = 150000") &&
     mainWorldText.includes("const MEDIA_UPLOAD_PROGRESS_HEARTBEAT_MS = 15000") &&
+    mainWorldText.includes("const MEDIA_UPLOAD_NO_ENTITY_TIMEOUT_MS = 45000") &&
     mainWorldText.includes("const MEDIA_UPLOAD_PENDING_READY_MS = 20000") &&
     mainWorldText.includes("const MEDIA_UPLOAD_PENDING_STABLE_MS = 5000") &&
+    mainWorldText.includes("const MEDIA_UPLOAD_PENDING_MAX_WAIT_MS = 32000") &&
     mainWorldText.includes("function canUsePendingMediaUpload(operation)") &&
     mainWorldText.includes("return !operation?.op?.coverOnly;") &&
     mainWorldText.includes("Uploading image ${index}/${total}... waiting for X to finish.") &&
     mainWorldText.includes("Image ${index}/${total} is in the editor; continuing...") &&
+    mainWorldText.includes("function mediaEntityDataSignature(data)") &&
     mainWorldText.includes("function findNewMediaUpload") &&
+    mainWorldText.includes("function mediaUploadInfoFromBlock(contentState, blockKey)") &&
+    mainWorldText.includes("function refreshUploadMediaId(draftNode, upload)") &&
+    mainWorldText.includes("async function waitForUploadMediaId(draftNode, upload, timeoutMs = 8000)") &&
+    mainWorldText.includes("while (Date.now() < deadline) {\n      throwIfCancelled();") &&
+    mainWorldText.includes("ignoredBlocks = new Set()") &&
+    mainWorldText.includes("if (ignoredBlocks.has(blockKey)) return;") &&
+    mainWorldText.includes("const found = findNewMediaUpload(contentState, before, existingAtomicBlocks);") &&
+    mainWorldText.includes("try {\n      preparedFile = await requestPreparedFile(imageOperation);") &&
+    mainWorldText.includes("throwIfCancelled();\n      return { ok: false, error: error?.message || \"Prepared image data was not available\", recoverable: true };") &&
+    mainWorldText.includes("return { ok: false, error: error?.message || \"Prepared image data was invalid\", recoverable: true };") &&
+    mainWorldText.includes("return { ok: false, error: error?.message || \"X upload handler failed\", recoverable: true };") &&
+    mainWorldText.includes("const failures = [];") &&
+    mainWorldText.includes("failures.push({ index: index + 1, fileName, error: error?.message || \"Invalid image file data\" });") &&
+    mainWorldText.includes("if (!files.length) return { ok: false, error: \"No image file data was provided\", failures };") &&
+    mainWorldText.includes("return { ok: false, error: error?.message || \"X upload handler failed\", failures };") &&
+    mainWorldText.includes('post("upload-files-error", { requestId: event.data.requestId, error: result.error, failures: result.failures || [], summary: result })') &&
+    contentScriptText.includes("error.failures = message.failures || message.summary?.failures || null;") &&
+    contentScriptText.includes("function uploadFilesFailureCount(summary = {})") &&
+    contentScriptText.includes("function formatUploadFilesMessage(summary = {}, requestedCount = 0)") &&
+    contentScriptText.includes("const skipped = uploadFilesFailureCount(summary);") &&
+    contentScriptText.includes("showStatus(message, skipped ? \"warn\" : \"done\", skipped ? 8000 : 5000);") &&
+    mainWorldText.includes("dataSignature: mediaEntityDataSignature(data)") &&
+    mainWorldText.includes("if (info.mediaId) upload.mediaId = info.mediaId;") &&
+    mainWorldText.includes("if (payload.cover && imageSourcesMatch(upload.source, payload.cover) && !upload.mediaId") &&
+    mainWorldText.includes("const refreshed = await waitForUploadMediaId(draftNode, upload);") &&
     mainWorldText.includes("if (candidate.mediaId) complete = candidate;") &&
     mainWorldText.includes("else pending ||= candidate;") &&
     mainWorldText.includes("if (found?.mediaId)") &&
     mainWorldText.includes("canUsePendingMediaUpload(imageOperation)") &&
+    mainWorldText.includes('const identitySignature = `${found.entityKey}:${found.blockKey}`;') &&
+    mainWorldText.includes("if (identitySignature !== pendingIdentitySignature)") &&
+    mainWorldText.includes('} else if ((found.dataSignature || "") !== pendingDataSignature) {') &&
     mainWorldText.includes("now - pendingFirstSeenAt >= MEDIA_UPLOAD_PENDING_READY_MS") &&
     mainWorldText.includes("now - pendingStableSince >= MEDIA_UPLOAD_PENDING_STABLE_MS") &&
+    mainWorldText.includes("now - pendingFirstSeenAt >= MEDIA_UPLOAD_PENDING_MAX_WAIT_MS") &&
     mainWorldText.includes("mediaPending: true") &&
     mainWorldText.includes("if (result.mediaPending) summary.imgPending += 1") &&
+    mainWorldText.includes("let imageBlock = upload.blockKey && blockMap.has(upload.blockKey) ? upload.blockKey : null;") &&
+    mainWorldText.includes("if (!imageBlock && upload.entityKey) imageBlock = entityToBlock.get(upload.entityKey) || null;") &&
+    mainWorldText.includes("now - startedAt >= MEDIA_UPLOAD_NO_ENTITY_TIMEOUT_MS") &&
+    mainWorldText.includes("noEntity: true") &&
     contentScriptText.includes("const MAIN_WORLD_SILENCE_TIMEOUT_MS = 180000") &&
+    contentScriptText.includes("try {\n        last = await loadImage(source, fallbackName);") &&
+    contentScriptText.includes("if (error?.cancelled) throw error;") &&
+    contentScriptText.includes("last = { ok: false, error: error?.message || \"Image fetch failed\", source };") &&
     contentScriptText.includes("}, MAIN_WORLD_SILENCE_TIMEOUT_MS);") &&
     mainWorldText.includes("X media upload took too long. X may be throttling this draft") &&
     mainWorldText.includes("timeoutMs") &&
     !mainWorldText.includes("Timed out waiting for X media upload") &&
     !mainWorldText.includes("Retrying image ${index + 1}"),
   "main-world image uploads should wait longer for X and return a recoverable timeout message"
+);
+assert.ok(
+  mainWorldText.includes("async function settleUploadedImageAtMarker") &&
+    mainWorldText.includes("const settleResult = await settleUploadedImageAtMarker(draftNode, upload, protectedAtomicBlocks);") &&
+    mainWorldText.includes("summary.relocatedImages += settleResult.moved;") &&
+    mainWorldText.includes("summary.markersCleaned += settleResult.markerCleaned;") &&
+    mainWorldText.includes("upload.settled = !settleResult.missing;") &&
+    mainWorldText.includes("const unsettledUploads = uploads.filter((upload) => !upload.coverOnly && !upload.settled);"),
+  "main-world image uploads should relocate and clean each marker as soon as that image reaches the editor"
+);
+assert.ok(
+  mainWorldText.includes("let markersWritten = false") &&
+    mainWorldText.includes("markersWritten = true") &&
+    mainWorldText.includes("if (markersWritten)") &&
+    mainWorldText.includes('progress("Cleaning up import markers...", error?.cancelled ? "warn" : "work")') &&
+    mainWorldText.includes('console.warn(LOG, "marker cleanup after interrupted import failed", cleanupError)') &&
+    mainWorldText.includes("error.summary = summary") &&
+    mainWorldText.includes('post("cancelled", { reason: error.message || "Writing stopped by user.", summary: error?.summary || null })') &&
+    mainWorldText.includes('post("error", { error: error?.message || String(error), stack: error?.stack || null, summary: error?.summary || null })') &&
+    contentScriptText.includes("error.mainSummary = message.summary || null;") &&
+    contentScriptText.includes("return { ok: false, error: message, mainSummary: error?.mainSummary || null };") &&
+    sidepanelText.includes("const mainSummary = payload.summary || payload.mainSummary || null;") &&
+    sidepanelText.includes("latestProgress.summary = mainSummary ? { main: mainSummary } : latestProgress.summary || null;") &&
+    sidepanelText.includes('recordLiveProgressEvent("cancelled", { reason: response?.error || "Writing stopped by user.", summary: response?.mainSummary || null });') &&
+    sidepanelText.includes('recordLiveProgressEvent("error", { error: response?.error || "unknown error", summary: response?.mainSummary || null });'),
+  "interrupted main-world imports should clean temporary xPoster markers and carry the cleanup summary back to sidepanel progress"
 );
 assert.equal(mainMediaSandbox.pendingUpload?.entityKey, "entity-1", "main-world should observe a pending X media placeholder entity");
 assert.equal(mainMediaSandbox.pendingUpload?.blockKey, "block-1", "main-world should observe a pending X media placeholder block");
@@ -1029,6 +1345,35 @@ assert.equal(
   "main-world should recognize rest_id media identifiers from nested entity data"
 );
 assert.equal(mainMediaSandbox.existingUpload, null, "main-world should ignore media entities that existed before the current upload step");
+assert.equal(
+  mainMediaSandbox.ignoredCompleteUpload?.blockKey,
+  "new-block",
+  "main-world should not match an already processed media block as a later upload"
+);
+assert.equal(
+  mainMediaSandbox.ignoredOnlyUpload,
+  null,
+  "main-world should keep waiting instead of reusing an ignored media block"
+);
+assert.notEqual(
+  mainMediaSandbox.pendingSignature,
+  mainMediaSandbox.readySignature,
+  "main-world should reset only the pending media data-stability timer when X updates media entity data"
+);
+assert.ok(
+  mainMediaSandbox.cyclicSignature.includes("[circular]"),
+  "main-world media entity signatures should tolerate cyclic X entity data"
+);
+assert.equal(
+  mainMediaSandbox.refreshedUpload.mediaId,
+  "2233445566",
+  "main-world should refresh pending upload records when X later attaches a media id"
+);
+assert.equal(
+  mainMediaSandbox.refreshedUpload.entityKey,
+  "pending-entity",
+  "main-world media id refresh should preserve the observed entity key"
+);
 assert.ok(
   contentScriptText.includes("image upload(s) timed out in X") &&
     sidepanelText.includes("image upload(s) timed out in X") &&
@@ -1124,7 +1469,7 @@ assert.ok(
 );
 assert.ok(
   sidepanelHtml.includes('id="cancelImport"') &&
-    sidepanelText.includes('sendToActiveTab({ type: "xposter:cancel-import" })') &&
+    sidepanelText.includes('sendToTargetTab({ type: "xposter:cancel-import" })') &&
     contentScriptText.includes('message?.type === "xposter:cancel-import"') &&
     contentScriptText.includes('class="__xposter_status_stop"') &&
     contentScriptText.includes('cancelActiveImport();') &&
@@ -1319,21 +1664,24 @@ assert.ok(
     sidepanelText.includes("function localAssetWriteBlocker") &&
     sidepanelText.includes("handleLocalAssetWriteBlocker(localAssetBlocker") &&
     sidepanelText.includes("retryAfterChoose = null") &&
+    !sidepanelText.includes("if (!selected?.skipped)") &&
     sidepanelText.includes("function ensureXPageForVaultPrompt") &&
     sidepanelText.includes("Opening X Articles so the page can ask for the local image folder.") &&
     sidepanelText.includes("chooseVault({\n        status: blocker.localImages || activeLocalImageFolderStatus(),\n        ensureXPage: true,\n        showSidepanelFallback: false\n      })") &&
     sidepanelText.includes("status: blocker.localImages || null") &&
+    sidepanelText.includes('const error = "Local image folder was not selected";') &&
+    sidepanelText.includes("return { ok: false, error };") &&
     sidepanelText.includes("draftDropActionStatus = actionName ? action.status || null : null") &&
     sidepanelText.includes("async function runRunbookAction(action, options = {})") &&
     sidepanelText.includes("chooseVault({\n          status: options.status || activeLocalImageFolderStatus(),\n          ensureXPage: true,\n          showSidepanelFallback: false\n        })") &&
     sidepanelText.includes("runRunbookAction(action, { status: draftDropActionStatus })") &&
-    sidepanelText.includes('action: "openArticles",\n          button: "Open X"') &&
+    sidepanelText.includes('setDraftDropStatus("Local image folder needed", localImageFolderActionDetail(blocker.localImages), "error", {\n        action: "openArticles",\n        button: "Open X",\n        status: blocker.localImages || null\n      });') &&
     sidepanelText.includes('action: "openArticles",\n        button: "Open X"') &&
     sidepanelText.includes("Local image folder selected. Continuing import.") &&
     sidepanelText.includes("retryAfterChoose: () => importMarkdownDraft(markdownInput, { queueItemId, batch, sourceFileName })") &&
     sidepanelText.includes("retryAfterChoose: () => (queueModeActive() ? importDraftQueue() : importDraft())") &&
     sidepanelText.includes("retryAfterChoose: () => importDraftQueue()") &&
-    sidepanelText.includes('sendToActiveTab({\n      type: "xposter:choose-vault",\n      count: status.count || 0,\n      hint: firstLocalImageFolderHint(status)\n    })') &&
+    sidepanelText.includes('sendToTargetTab({\n      type: "xposter:choose-vault",\n      count: status.count || 0,\n      hint: firstLocalImageFolderHint(status)\n    }, { requireArticles: true })') &&
     sidepanelText.includes('button[data-preflight-action]') &&
     !sidepanelText.includes("els.pickVault.addEventListener") &&
     !sidepanelText.includes("els.clearVault.addEventListener") &&
@@ -1342,11 +1690,20 @@ assert.ok(
     !sidepanelText.includes("setLocalizedTextIfChanged(els.vaultDetail") &&
     contentScriptText.includes('panel.addEventListener("click", async (event) =>') &&
     contentScriptText.includes('const button = event.target.closest?.("button");') &&
+    contentScriptText.includes('"Cancel write": "取消写入"') &&
+    contentScriptText.includes("Local image folder picker is unavailable in this tab.") &&
+    contentScriptText.includes('throw new Error("Local image folder picker is unavailable in this tab.') &&
+    contentScriptText.includes('if (!result.ok) throw new Error(result.error || "Local image folder was not selected");') &&
+    contentScriptText.includes('const skipLabel = translateContentText("Cancel write");') &&
     contentScriptText.includes('if (button?.id === "xposter-vault-skip")') &&
+    contentScriptText.includes('finish({ ok: false, error: "Local image folder was not selected" });') &&
     contentScriptText.includes('if (button?.id !== "xposter-vault-pick") return;') &&
     contentScriptText.includes("promptVaultSelection(message).then(sendResponse)") &&
     !contentScriptText.includes('panel.querySelector("#xposter-vault-skip").addEventListener') &&
     !contentScriptText.includes('panel.querySelector("#xposter-vault-pick").addEventListener') &&
+    !contentScriptText.includes("local image(s) skipped: directory picker is unavailable") &&
+    !contentScriptText.includes("finish({ ok: false, skipped: true })") &&
+    !contentScriptText.includes("!result.ok && !result.skipped") &&
     sidepanelText.includes("Open the X Article page; xPoster will ask there for the folder that contains") &&
     !sidepanelText.includes("Click Choose folder, then select the folder that contains") &&
     sidepanelPatternsText.includes("打开 X 文章页后，xPoster 会在页面内询问包含 $2 的文件夹。") &&
@@ -1984,6 +2341,7 @@ assert.ok(
       "#markdown:focus",
       "caret-color: var(--signal-text);",
       ".draft-editor-input-wrap:focus-within",
+      "textarea:not(#markdown):focus-visible",
       ".draft-syntax-highlight {\n  position: absolute;\n  inset: 0;\n  color:",
       "display: none;",
       ".draft-token-heading",
@@ -2023,6 +2381,7 @@ assert.ok(
       "border: 1px solid var(--draft-editor-frame-line);",
       "box-shadow: inset 0 0 0 1px var(--draft-editor-focus-ring);",
       "box-shadow: inset 0 1px 0 var(--draft-editor-focus-field-line);",
+      "textarea:focus-visible,\n.record-search input:focus-visible",
       ".panel.active {\n  min-height: 0;\n  display: grid;\n  align-self: start;",
       ".composer {\n  position: relative;\n  min-height: 0;",
       ".composer {\n  position: relative;\n  height: 100%;\n  min-height: 0;\n  align-self: stretch;\n  align-content: start;",
@@ -2272,7 +2631,7 @@ assert.ok(
     sidepanelText.includes("const hasPlan = hasQueue || hasParsedDraft;") &&
     sidepanelText.includes('if (check.tone === "ok") readyCount += 1;') &&
     sidepanelText.includes('setLocalizedTextIfChanged(els.preflightMeta, `${readyCount}/${checks.length} checks ready`);') &&
-    sidepanelText.includes("const checks = buildPreflightChecks();\n    updatePreflight(checks);") &&
+    /const checks = buildPreflightChecks\(\);\s+updatePreflight\(checks\);/.test(sidepanelText) &&
     sidepanelText.includes("checks,") &&
     sidepanelText.includes('const blockerCount = countItemsByTone(checks, "error");') &&
     sidepanelText.includes('if (blockerCount) log(`Publishing check found ${blockerCount} blocker(s).`);') &&
@@ -2467,8 +2826,12 @@ assert.ok(
     sidepanelText.includes('setLocalizedTextIfChanged(els.vaultSettingsText, `${vault.name} - ${permissionText.toLowerCase()}.`)') &&
     sidepanelText.includes('setBooleanPropertyIfChanged(els.clearVaultSettings, "disabled", !enabled)') &&
     sidepanelText.includes('setBooleanPropertyIfChanged(els.runPreflight, "disabled", true)') &&
+    sidepanelText.includes('latestDiagnostics = { ok: false, error: message };') &&
+    sidepanelText.includes('log(localizeInterpolated("Publishing check failed: {error}", { error: localizeText(message) }));') &&
+    sidepanelText.includes('} finally {\n      setBooleanPropertyIfChanged(els.runPreflight, "disabled", false);') &&
     sidepanelText.includes('setBooleanPropertyIfChanged(els.runPreflight, "disabled", false)') &&
     sidepanelText.includes('setLocalizedTextIfChanged(els.runPreflight, "Check")') &&
+    sidepanelMessagesText.includes('"Publishing check failed: {error}"') &&
     !sidepanelText.includes('setBooleanPropertyIfChanged(els.clearVault, "disabled", !enabled)') &&
     !sidepanelText.includes("translateDynamicDom(els.localImagesPanel)") &&
     !sidepanelText.includes('els.vaultState.textContent = "Not configured"') &&
@@ -2481,6 +2844,33 @@ assert.ok(
     !sidepanelText.includes("els.runPreflight.disabled = true") &&
     !sidepanelText.includes("els.runPreflight.disabled = false"),
   "vault and preflight status refreshes should use the settings status only and changed-only disabled writes"
+);
+assert.ok(
+  sidepanelConfigText.includes('const STORAGE_TARGET_TAB = "xposter_sidepanel_target_tab"') &&
+    sidepanelConfigText.includes("STORAGE_TARGET_TAB") &&
+    backgroundText.includes('const SIDEPANEL_TARGET_TAB_STORAGE_KEY = "xposter_sidepanel_target_tab"') &&
+    backgroundText.includes("await rememberSidePanelTargetTab(sourceTab || { id: tabId });") &&
+    backgroundText.includes("openArticles(sender)") &&
+    backgroundText.includes("let tab = sender?.tab || null;") &&
+    backgroundText.includes('chrome.tabs.update(tab.id, { active: true, url: "https://x.com/compose/articles" })') &&
+    backgroundText.includes("function rememberSidePanelTargetTab(tab)") &&
+    backgroundText.includes("function isXUrl(url)") &&
+    sidepanelText.includes("let targetTabId = null;") &&
+    sidepanelText.includes("function rememberTargetTab(tab)") &&
+    sidepanelText.includes("async function restoreTargetTab(stored = null)") &&
+    sidepanelText.includes("async function sendToTargetTab(message, options = {})") &&
+    sidepanelText.includes("const tabs = await chrome.tabs.query({ currentWindow: true, url: [\"https://x.com/*\", \"https://twitter.com/*\"] });") &&
+    sidepanelText.includes("tabs.find((tab) => isXTab(tab) && isArticlesUrl(tab.url))") &&
+    sidepanelText.includes("await restoreTargetTab(stored);") &&
+    sidepanelText.includes('sendToTargetTab({ type: "xposter:page-status" })') &&
+    sidepanelText.includes('sendToTargetTab({ type: "xposter:diagnostics" }, { requireArticles: true })') &&
+    sidepanelText.includes('type: "xposter:import-markdown"') &&
+    sidepanelText.includes('chrome.tabs.update(tab.id, { active: true, url: "https://x.com/compose/articles" })') &&
+    sidepanelText.includes("await refreshPageState();\n      checks = buildPreflightChecks(preflightContext);") &&
+    sidepanelText.includes("const refreshedPageScriptCheck = checks.find((check) => check.id === \"page-script\");") &&
+    !sidepanelText.includes("async function sendToActiveTab") &&
+    !sidepanelText.includes("sendToActiveTab("),
+  "side panel should remember the originating X tab, send commands to that target, and refresh stale old-importer state before blocking writes"
 );
 assert.ok(
   sidepanelText.includes("function setTextContentIfChanged(node, value)") &&

@@ -15,6 +15,7 @@ const SUPPORTED_IMAGE_MIME_TYPES = new Set([
 
 const remoteImageCache = new Map();
 let remoteImageCacheBytes = 0;
+const SIDEPANEL_TARGET_TAB_STORAGE_KEY = "xposter_sidepanel_target_tab";
 
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
@@ -43,7 +44,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === "xposter:open-articles") {
-    openArticles()
+    openArticles(sender)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: error?.message || String(error) }));
     return true;
@@ -61,11 +62,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function openSidePanel(sender) {
   let tabId = sender.tab?.id || null;
+  let sourceTab = sender.tab || null;
   if (!tabId) {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     tabId = tab?.id || null;
+    sourceTab = tab || null;
   }
   if (tabId) {
+    await rememberSidePanelTargetTab(sourceTab || { id: tabId });
     await chrome.sidePanel.open({ tabId });
     return { ok: true, tabId };
   }
@@ -77,11 +81,29 @@ async function openSidePanel(sender) {
   return { ok: true };
 }
 
+async function rememberSidePanelTargetTab(tab) {
+  if (!tab?.id || !isXUrl(tab.url || "")) return;
+  try {
+    await chrome.storage.local.set({
+      [SIDEPANEL_TARGET_TAB_STORAGE_KEY]: {
+        id: tab.id,
+        url: tab.url || "",
+        windowId: tab.windowId || null,
+        savedAt: Date.now()
+      }
+    });
+  } catch {}
+}
+
+function isXUrl(url) {
+  return /^https:\/\/(?:x|twitter)\.com\//.test(String(url || ""));
+}
+
 async function diagnoseActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return { ok: false, error: "No active tab" };
   const url = tab.url || "";
-  const isX = /^https:\/\/(?:x|twitter)\.com\//.test(url);
+  const isX = isXUrl(url);
   let content = null;
   if (isX) {
     try {
@@ -97,16 +119,22 @@ async function diagnoseActiveTab() {
   };
 }
 
-async function openArticles() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+async function openArticles(sender) {
+  let tab = sender?.tab || null;
+  if (!tab?.id) {
+    [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  }
   if (tab?.id) {
     if (/^https:\/\/(?:x|twitter)\.com\/compose\/articles(?:$|[/?#])/.test(tab.url || "")) {
+      await rememberSidePanelTargetTab(tab);
       return { ok: true, tabId: tab.id };
     }
-    await chrome.tabs.update(tab.id, { url: "https://x.com/compose/articles" });
+    const updated = await chrome.tabs.update(tab.id, { active: true, url: "https://x.com/compose/articles" });
+    await rememberSidePanelTargetTab(updated || { ...tab, url: "https://x.com/compose/articles" });
     return { ok: true, tabId: tab.id };
   }
   const created = await chrome.tabs.create({ url: "https://x.com/compose/articles" });
+  await rememberSidePanelTargetTab(created);
   return { ok: true, tabId: created.id || null };
 }
 

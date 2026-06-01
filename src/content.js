@@ -139,10 +139,11 @@
     "If your Markdown says": "如果 Markdown 里写的是",
     "choose the folder that contains the": "请选择包含",
     "directory.": "目录的文件夹。",
-    "Skip": "跳过",
+    "Cancel write": "取消写入",
     "Choose folder": "选择文件夹",
     "Read permission was not granted": "未获得读取权限",
     "Local image folder was not selected": "未选择本地图片文件夹",
+    "Local image folder picker is unavailable in this tab. Open the X Article tab in Chrome, then choose the folder that contains your Markdown images.": "当前标签页无法选择本地图片文件夹。请在 Chrome 中打开 X 文章页，再选择包含 Markdown 图片的文件夹。",
     "Extension context unavailable": "扩展上下文不可用",
     "Extension runtime messaging unavailable": "扩展消息通道不可用",
     "Extension context invalidated. Reload the X Article tab after updating xPoster.": "扩展上下文已失效。更新 xPoster 后请重新加载 X 文章标签页。",
@@ -157,6 +158,9 @@
     { label: "original import style", selector: "#__xmp_import_btn_style__" },
     { label: "original status banner", selector: "#__x_md_paste_banner__" },
     { label: "original page offset style", selector: "#__x_md_paste_offset_style__" }
+  ];
+  const ORIGINAL_IMPORTER_BODY_CLASSES = [
+    { label: "original banner class", className: "__xmp_banner_visible" }
   ];
   const CONTENT_SCRIPT_VERSION =
     typeof chrome !== "undefined" && chrome.runtime?.getManifest
@@ -178,6 +182,7 @@
     currentMarkdown: "",
     cancelRequested: false,
     activeRun: null,
+    statusTimer: 0,
     language: "en",
     articleExport: {
       enabled: true,
@@ -273,9 +278,11 @@
     return articleExportPathInfo(url).id;
   }
 
-  function collectTargetContext() {
+  async function collectTargetContext(options = {}) {
     const editor = findEditor();
     const editorText = normalizeText(editor?.innerText || editor?.textContent || "");
+    const originalImporterResidue = options.originalImporterResidue ||
+      await currentOriginalImporterResidue({ cleanup: Boolean(options.cleanupOriginalImporter) });
     return {
       url: location.href,
       pageTitle: document.title || "",
@@ -286,7 +293,7 @@
       hasEditor: Boolean(editor),
       editorTextLength: editorText.length,
       editorSample: editorText ? truncateText(editorText, 180) : "",
-      originalImporterResidue: detectOriginalImporterResidue()
+      originalImporterResidue
     };
   }
 
@@ -295,17 +302,51 @@
     for (const marker of ORIGINAL_IMPORTER_MARKERS) {
       if (document.querySelector(marker.selector)) markers.push(marker.label);
     }
-    if (document.body?.classList?.contains("__xmp_banner_visible")) {
-      markers.push("original banner class");
+    for (const marker of ORIGINAL_IMPORTER_BODY_CLASSES) {
+      if (document.body?.classList?.contains(marker.className)) markers.push(marker.label);
     }
+    return originalImporterResidueResult(markers);
+  }
+
+  function originalImporterResidueResult(markers = [], cleanup = {}) {
     const uniqueMarkers = Array.from(new Set(markers));
+    const cleanedMarkers = Array.from(new Set(cleanup.cleanedMarkers || []));
     return {
       detected: uniqueMarkers.length > 0,
       markers: uniqueMarkers,
+      cleanupAttempted: Boolean(cleanup.attempted),
+      cleanedMarkers,
       detail: uniqueMarkers.length
         ? `Old X Article Markdown Paste residue detected: ${uniqueMarkers.join(", ")}`
+        : cleanedMarkers.length
+        ? `Old X Article Markdown Paste residue cleaned: ${cleanedMarkers.join(", ")}`
         : ""
     };
+  }
+
+  function cleanupOriginalImporterResidue() {
+    const cleaned = [];
+    for (const marker of ORIGINAL_IMPORTER_MARKERS) {
+      const nodes = Array.from(document.querySelectorAll(marker.selector));
+      if (!nodes.length) continue;
+      for (const node of nodes) node.remove?.();
+      cleaned.push(marker.label);
+    }
+    for (const marker of ORIGINAL_IMPORTER_BODY_CLASSES) {
+      if (!document.body?.classList?.contains(marker.className)) continue;
+      document.body.classList.remove(marker.className);
+      cleaned.push(marker.label);
+    }
+    return Array.from(new Set(cleaned));
+  }
+
+  async function currentOriginalImporterResidue({ cleanup = false } = {}) {
+    const before = detectOriginalImporterResidue();
+    if (!cleanup || !before.detected) return before;
+    const cleanedMarkers = cleanupOriginalImporterResidue();
+    await sleep(120);
+    const after = detectOriginalImporterResidue();
+    return originalImporterResidueResult(after.markers, { attempted: true, cleanedMarkers });
   }
 
   function normalizeText(text) {
@@ -385,7 +426,6 @@
       [/^Article written(?: in (.+))?\. (.+) table image\(s\) stayed as Markdown tables; (.+) cover image\(s\) could not be applied\.$/, (_, elapsed, tables, covers) => elapsed ? `文章已写入，用时 ${elapsed}。${tables} 个表格保留为 Markdown；${covers} 张封面图片未能设置。` : `文章已写入。${tables} 个表格保留为 Markdown；${covers} 张封面图片未能设置。`],
       [/^Article written(?: in (.+))?\. (.+) table image\(s\) stayed as Markdown tables\.$/, (_, elapsed, tables) => elapsed ? `文章已写入，用时 ${elapsed}。${tables} 个表格保留为 Markdown。` : `文章已写入。${tables} 个表格保留为 Markdown。`],
       [/^Article written(?: in (.+))?\. (.+) web image\(s\) stayed as Markdown links; (.+) table\(s\) kept as Markdown\.(?: Replace unreachable image URLs with public links, then write again if those images must upload\.)?$/, (_, elapsed, images, tables) => elapsed ? `文章已写入，用时 ${elapsed}。${images} 张网页图片保留为 Markdown 链接；${tables} 个表格保留为 Markdown。` : `文章已写入。${images} 张网页图片保留为 Markdown 链接；${tables} 个表格保留为 Markdown。`],
-      [/^(\d+) local image\(s\) skipped: directory picker is unavailable$/, "$1 张本地图片已跳过：当前浏览器无法选择文件夹"],
       [/^(\d+) local image\(s\) need a local image folder\.\.\.$/, "$1 张本地图片需要选择本地图片文件夹..."],
       [/^(\d+) local image\(s\) need a root folder\.$/, "$1 张本地图片需要选择根文件夹。"],
       [/^(\d+) local image\(s\) use relative paths\. Select the folder that contains (.+)\.$/, "$1 张本地图片使用相对路径。请选择包含 $2 的文件夹。"],
@@ -394,6 +434,7 @@
       [/^Old X Article Markdown Paste residue detected: (.+)$/, "检测到旧版 X Article Markdown Paste 残留：$1"],
       [/^Adding (\d+) dropped image(?:s)?\.\.\.$/, "正在添加 $1 张拖入的图片..."],
       [/^Adding (\d+) image(?:s)?\.\.\.$/, "正在添加 $1 张图片..."],
+      [/^(\d+) image\(s\) handed to X's uploader; (\d+) image\(s\) skipped\.$/, "$1 张图片已交给 X 上传；$2 张图片已跳过。"],
       [/^(\d+) image\(s\) handed to X's uploader\.$/, "$1 张图片已交给 X 上传。"],
       [/^(\d+) image handed to X's uploader\.$/, "$1 张图片已交给 X 上传。"],
       [/^Added (\d+) Markdown draft(?:s)? to the side panel\.$/, "已添加 $1 篇 Markdown 草稿到侧边栏。"]
@@ -605,7 +646,18 @@
     syncStatusStopButton(card, level);
     setClassPresenceIfChanged(document.body, "__xposter_status_visible", true);
     broadcast({ type: "status", text, level });
-    if (timeout) window.setTimeout(hideStatus, timeout);
+    if (state.statusTimer) {
+      window.clearTimeout(state.statusTimer);
+      state.statusTimer = 0;
+    }
+    if (timeout) {
+      const timer = window.setTimeout(() => {
+        if (state.statusTimer !== timer) return;
+        state.statusTimer = 0;
+        hideStatus();
+      }, timeout);
+      state.statusTimer = timer;
+    }
   }
 
   function statusCardNodes(card) {
@@ -637,6 +689,10 @@
   }
 
   function hideStatus() {
+    if (state.statusTimer) {
+      window.clearTimeout(state.statusTimer);
+      state.statusTimer = 0;
+    }
     document.getElementById(STATUS_ID)?.remove();
     setClassPresenceIfChanged(document.body, "__xposter_status_visible", false);
     broadcast({ type: "status", text: "", level: "idle" });
@@ -1250,7 +1306,9 @@
           clearTimeout(timeout);
           window.removeEventListener("message", listener);
           if (state.activeRun?.reject === reject) state.activeRun = null;
-          reject(new Error(message.error || "X editor bridge failed"));
+          const error = new Error(message.error || "X editor bridge failed");
+          error.mainSummary = message.summary || null;
+          reject(error);
         }
       };
       window.addEventListener("message", listener);
@@ -1356,7 +1414,7 @@
       }
       showStatus(message, "error", 8000);
       broadcast({ type: "error", error: message, mediaFailures: error?.mediaFailures || null, mainSummary: error?.mainSummary || null });
-      return { ok: false, error: message };
+      return { ok: false, error: message, mainSummary: error?.mainSummary || null };
     } finally {
       state.busy = false;
       state.cancelRequested = false;
@@ -1378,14 +1436,11 @@
     const existing = await shared.getVaultRecord().catch(() => null);
     if (existing?.handle && (await shared.queryReadPermission(existing.handle)) === "granted") return;
     if (typeof window.showDirectoryPicker !== "function") {
-      showStatus(`${count} local image(s) skipped: directory picker is unavailable`, "warn", 3000);
-      return;
+      throw new Error("Local image folder picker is unavailable in this tab. Open the X Article tab in Chrome, then choose the folder that contains your Markdown images.");
     }
     showStatus(`${count} local image(s) need a local image folder...`, "warn");
     const result = await promptVaultSelection({ count, hint: firstLocalImageFolderHintForSegments(segments) });
-    if (!result.ok && !result.skipped) {
-      throw new Error(result.error || "Local image folder was not selected");
-    }
+    if (!result.ok) throw new Error(result.error || "Local image folder was not selected");
   }
 
   function isRemoteHttpImageSource(source) {
@@ -1570,7 +1625,7 @@
       const helpMiddle = translateContentText("choose the folder that contains the");
       const helpEnd = translateContentText("directory.");
       const helpJoiner = isChineseLanguage() ? "，" : ", ";
-      const skipLabel = translateContentText("Skip");
+      const skipLabel = translateContentText("Cancel write");
       const chooseLabel = translateContentText("Choose folder");
       panel.innerHTML = `
         <div class="__xposter_vault_title">${shared.escapeHtml(title)}</div>
@@ -1593,7 +1648,7 @@
       panel.addEventListener("click", async (event) => {
         const button = event.target.closest?.("button");
         if (button?.id === "xposter-vault-skip") {
-          finish({ ok: false, skipped: true });
+          finish({ ok: false, error: "Local image folder was not selected" });
           return;
         }
         if (button?.id !== "xposter-vault-pick") return;
@@ -1610,7 +1665,7 @@
         } catch (error) {
           finish(
             error?.name === "AbortError"
-              ? { ok: false, skipped: true }
+              ? { ok: false, error: "Local image folder was not selected" }
               : { ok: false, error: error?.message || String(error) }
           );
         }
@@ -1669,7 +1724,12 @@
     let last = null;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       throwIfImportCancelled();
-      last = await loadImage(source, fallbackName);
+      try {
+        last = await loadImage(source, fallbackName);
+      } catch (error) {
+        if (error?.cancelled) throw error;
+        last = { ok: false, error: error?.message || "Image fetch failed", source };
+      }
       if (last?.ok) return last;
       if (attempt < attempts && isRetryableImageError(last?.error)) {
         showStatus(`Retrying image ${fallbackName.replace("image-", "")}...`, "warn");
@@ -2199,12 +2259,27 @@
         if (message.kind === "upload-files-error") {
           clearTimeout(timeout);
           window.removeEventListener("message", listener);
-          reject(new Error(message.error || "X image upload failed"));
+          const error = new Error(message.error || "X image upload failed");
+          error.failures = message.failures || message.summary?.failures || null;
+          error.summary = message.summary || null;
+          reject(error);
         }
       };
       window.addEventListener("message", listener);
       window.postMessage({ source: CHANNEL_TO_MAIN, kind: "upload-files", requestId, files }, "*");
     });
+  }
+
+  function uploadFilesFailureCount(summary = {}) {
+    return Number(summary.failed || 0) || (Array.isArray(summary.failures) ? summary.failures.length : 0);
+  }
+
+  function formatUploadFilesMessage(summary = {}, requestedCount = 0) {
+    const count = Number(summary.count || 0) || Number(requestedCount || 0);
+    const failed = uploadFilesFailureCount(summary);
+    return failed
+      ? `${count} image(s) handed to X's uploader; ${failed} image(s) skipped.`
+      : `${count} image(s) handed to X's uploader.`;
   }
 
   async function uploadPreparedImages(payloads, label = "dropped image") {
@@ -2217,12 +2292,14 @@
       if (!(await waitForMainReady())) throw new Error("X editor bridge is not ready");
       showStatus(`Adding ${payloads.length} ${label}${payloads.length > 1 ? "s" : ""}...`, "work");
       const summary = await runMainUploadFiles(payloads);
-      const message = `${summary.count || payloads.length} image(s) handed to X's uploader.`;
-      showStatus(message, "done", 5000);
-      broadcast({ type: "status", text: message, level: "done" });
+      const skipped = uploadFilesFailureCount(summary);
+      const message = formatUploadFilesMessage(summary, payloads.length);
+      showStatus(message, skipped ? "warn" : "done", skipped ? 8000 : 5000);
+      broadcast({ type: "status", text: message, level: skipped ? "warn" : "done" });
       return { ok: true, summary };
     } catch (error) {
-      const message = error?.message || String(error);
+      const skipped = Array.isArray(error?.failures) ? error.failures.length : 0;
+      const message = skipped ? `${error?.message || String(error)}; ${skipped} image(s) skipped.` : error?.message || String(error);
       showStatus(message, "error", 7000);
       broadcast({ type: "error", error: message });
       return { ok: false, error: message };
@@ -2268,9 +2345,10 @@
           source
         }
       ]);
-      const message = `${summary.count || 1} image handed to X's uploader.`;
-      showStatus(message, "done", 5000);
-      broadcast({ type: "status", text: message, level: "done" });
+      const skipped = uploadFilesFailureCount(summary);
+      const message = formatUploadFilesMessage(summary, 1);
+      showStatus(message, skipped ? "warn" : "done", skipped ? 8000 : 5000);
+      broadcast({ type: "status", text: message, level: skipped ? "warn" : "done" });
       return { ok: true, summary };
     } catch (error) {
       const message = error?.message || String(error);
@@ -2724,7 +2802,11 @@
   }
 
   function articleExportContainer(element) {
-    let best = element.closest("article") || element;
+    const article = element?.closest?.("article") || null;
+    const longform = element?.closest?.(ARTICLE_EXPORT_LONGFORM_SELECTOR) || null;
+    if (!article && !longform) return null;
+    const boundary = article || longform;
+    let best = boundary;
     for (let node = element; node && node !== document.body; node = node.parentElement) {
       if (!node.matches?.("article, main article, [data-testid='cellInnerDiv'], section, div")) continue;
       const rect = node.getBoundingClientRect?.();
@@ -2732,7 +2814,7 @@
       const textLength = normalizeText(node.innerText || node.textContent || "").length;
       const currentLength = normalizeText(best.innerText || best.textContent || "").length;
       if (textLength >= currentLength && textLength <= 28000) best = node;
-      if (node.matches?.("article")) break;
+      if (node === boundary || node.matches?.("article")) break;
     }
     return best;
   }
@@ -2754,12 +2836,19 @@
   }
 
   function detectArticleExportTitleNode(container) {
-    return Array.from(container?.querySelectorAll?.("h1, h2, [role='heading'], [data-testid='twitter-article-title']") || [])
-      .find((node) => {
-        if (node.closest?.(`#${ARTICLE_EXPORT_ID}, [role='button'], button, nav, time`)) return false;
-        const text = normalizeText(articleNodeReadableText(node));
-        return text && !/^post$|^article$/i.test(text);
-      }) || null;
+    const xTitle = container?.querySelector?.("[data-testid='twitter-article-title']");
+    if (isReadableArticleTitleNode(xTitle)) return xTitle;
+    return Array.from(container?.querySelectorAll?.("h1, h2, [role='heading']") || [])
+      .find(isReadableArticleTitleNode) || null;
+  }
+
+  function isReadableArticleTitleNode(node) {
+    if (!node) return false;
+    if (node.closest?.(`#${ARTICLE_EXPORT_ID}, [role='button'], button, nav, time`)) return false;
+    const text = normalizeText(articleNodeReadableText(node));
+    if (!text || /^post$|^article$/i.test(text)) return false;
+    const rect = node.getBoundingClientRect?.();
+    return !rect || (rect.width >= 32 && rect.height >= 12);
   }
 
   function detectArticleExportTitle(container, parts = [], titleNode = null) {
@@ -4548,7 +4637,10 @@
       return false;
     }
     if (message?.type === "xposter:page-status") {
-      getVaultStatus().then((vault) =>
+      Promise.all([
+        getVaultStatus(),
+        currentOriginalImporterResidue({ cleanup: true })
+      ]).then(async ([vault, originalImporterResidue]) =>
         sendResponse({
           ok: true,
           contentScriptVersion: CONTENT_SCRIPT_VERSION,
@@ -4558,8 +4650,8 @@
           hasEditor: Boolean(findEditor()),
           busy: state.busy,
           lastSummary: state.lastSummary,
-          targetContext: collectTargetContext(),
-          originalImporterResidue: detectOriginalImporterResidue(),
+          targetContext: await collectTargetContext({ originalImporterResidue }),
+          originalImporterResidue,
           vault
         })
       );
@@ -4615,6 +4707,7 @@
   async function collectDiagnostics() {
     const vault = await getVaultStatus();
     const main = await diagnoseMainWorld();
+    const originalImporterResidue = await currentOriginalImporterResidue({ cleanup: true });
     return {
       ok: true,
       contentScript: true,
@@ -4624,10 +4717,10 @@
       isEditorRoute: isEditorRoute(),
       hasEditorElement: Boolean(findEditor()),
       importButtonMounted: Boolean(document.getElementById(IMPORT_BUTTON_ID)),
-      originalImporterResidue: detectOriginalImporterResidue(),
+      originalImporterResidue,
       busy: state.busy,
       mainReady: state.mainReady,
-      targetContext: collectTargetContext(),
+      targetContext: await collectTargetContext({ originalImporterResidue }),
       vault,
       main
     };

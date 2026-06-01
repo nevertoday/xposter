@@ -8,8 +8,10 @@
   const MEDIA_UPLOAD_PER_ITEM_TIMEOUT_MS = 2500;
   const MEDIA_UPLOAD_MAX_TIMEOUT_MS = 150000;
   const MEDIA_UPLOAD_PROGRESS_HEARTBEAT_MS = 15000;
+  const MEDIA_UPLOAD_NO_ENTITY_TIMEOUT_MS = 45000;
   const MEDIA_UPLOAD_PENDING_READY_MS = 20000;
   const MEDIA_UPLOAD_PENDING_STABLE_MS = 5000;
+  const MEDIA_UPLOAD_PENDING_MAX_WAIT_MS = 32000;
   const MEDIA_UPLOAD_TIMEOUT_ERROR =
     "X media upload took too long. X may be throttling this draft, especially with many images. Wait a moment, then write again or split the article.";
 
@@ -412,22 +414,33 @@
   function uploadFilesToEditor(filePayloads = []) {
     const onFilesAdded = findOnFilesAdded();
     if (!onFilesAdded) return { ok: false, error: "X upload handler was not reachable" };
-    const files = filePayloads
-      .filter((file) => file?.base64)
-      .map((file, index) =>
-        base64ToFile(
-          file.base64,
-          file.fileName || `image-${index + 1}.png`,
-          file.mime || "image/png"
-        )
-      );
-    if (!files.length) return { ok: false, error: "No image file data was provided" };
+    const files = [];
+    const failures = [];
+    filePayloads.forEach((file, index) => {
+      const fileName = file?.fileName || `image-${index + 1}.png`;
+      if (!file?.base64) {
+        failures.push({ index: index + 1, fileName, error: "No image file data was provided" });
+        return;
+      }
+      try {
+        files.push(base64ToFile(file.base64, fileName, file.mime || "image/png"));
+      } catch (error) {
+        failures.push({ index: index + 1, fileName, error: error?.message || "Invalid image file data" });
+      }
+    });
+    if (!files.length) return { ok: false, error: "No image file data was provided", failures };
     const editor = findEditorElement();
     editor?.focus?.();
-    onFilesAdded(files);
+    try {
+      onFilesAdded(files);
+    } catch (error) {
+      return { ok: false, error: error?.message || "X upload handler failed", failures };
+    }
     return {
       ok: true,
       count: files.length,
+      failed: failures.length,
+      failures,
       files: files.map((file) => ({ name: file.name, type: file.type, size: file.size }))
     };
   }
@@ -516,11 +529,34 @@
     return null;
   }
 
-  function findNewMediaUpload(contentState, existingEntities) {
+  function mediaEntityDataSignature(data) {
+    const seen = new WeakSet();
+    try {
+      return JSON.stringify(data, (key, value) => {
+        if (typeof value === "function") return `[function:${value.name || "anonymous"}]`;
+        if (typeof value === "string") return value.length > 160 ? `${value.slice(0, 160)}...` : value;
+        if (value && typeof value === "object") {
+          if (seen.has(value)) return "[circular]";
+          seen.add(value);
+        }
+        return value;
+      }).slice(0, 1200);
+    } catch {
+      if (!data || typeof data !== "object") return String(data || "");
+      try {
+        return Object.keys(data).sort().join("|");
+      } catch {
+        return "";
+      }
+    }
+  }
+
+  function findNewMediaUpload(contentState, existingEntities, ignoredBlocks = new Set()) {
     let pending = null;
     let complete = null;
     contentState.getBlockMap().forEach((block, blockKey) => {
       if (complete || block.getType() !== "atomic") return;
+      if (ignoredBlocks.has(blockKey)) return;
       block.findEntityRanges(
         (character) => Boolean(character.getEntity()),
         (start) => {
@@ -530,7 +566,13 @@
           try {
             const entity = contentState.getEntity(entityKey);
             if (entity.getType() !== "MEDIA") return;
-            const candidate = { entityKey, blockKey, mediaId: mediaIdFromEntityData(entity.getData()) };
+            const data = entity.getData();
+            const candidate = {
+              entityKey,
+              blockKey,
+              mediaId: mediaIdFromEntityData(data),
+              dataSignature: mediaEntityDataSignature(data)
+            };
             if (candidate.mediaId) complete = candidate;
             else pending ||= candidate;
           } catch {}
@@ -538,6 +580,77 @@
       );
     });
     return complete || pending;
+  }
+
+  function mediaUploadInfoFromBlock(contentState, blockKey) {
+    const block = contentState.getBlockMap().get(blockKey);
+    if (!block || block.getType() !== "atomic") return null;
+    let info = null;
+    block.findEntityRanges(
+      (character) => Boolean(character.getEntity()),
+      (start) => {
+        if (info?.mediaId) return;
+        const entityKey = block.getCharacterList().get(start)?.getEntity?.();
+        if (!entityKey) return;
+        try {
+          const entity = contentState.getEntity(entityKey);
+          if (entity.getType() !== "MEDIA") return;
+          const data = entity.getData();
+          info = {
+            entityKey,
+            blockKey,
+            mediaId: mediaIdFromEntityData(data),
+            dataSignature: mediaEntityDataSignature(data)
+          };
+        } catch {}
+      }
+    );
+    return info;
+  }
+
+  function refreshUploadMediaId(draftNode, upload) {
+    if (!upload) return null;
+    if (upload.mediaId) return upload.mediaId;
+    const contentState = draftNode?.props?.editorState?.getCurrentContent?.();
+    if (!contentState) return null;
+    const blockMap = contentState.getBlockMap();
+    let info = upload.blockKey && blockMap.has(upload.blockKey)
+      ? mediaUploadInfoFromBlock(contentState, upload.blockKey)
+      : null;
+    if (!info && upload.entityKey) {
+      try {
+        const entity = contentState.getEntity(upload.entityKey);
+        if (entity.getType() === "MEDIA") {
+          const data = entity.getData();
+          info = {
+            entityKey: upload.entityKey,
+            blockKey: upload.blockKey || null,
+            mediaId: mediaIdFromEntityData(data),
+            dataSignature: mediaEntityDataSignature(data)
+          };
+        }
+      } catch {}
+    }
+    if (!info) return null;
+    if (info.entityKey) upload.entityKey = info.entityKey;
+    if (info.blockKey) upload.blockKey = info.blockKey;
+    if (info.dataSignature) upload.dataSignature = info.dataSignature;
+    if (info.mediaId) upload.mediaId = info.mediaId;
+    return upload.mediaId || null;
+  }
+
+  async function waitForUploadMediaId(draftNode, upload, timeoutMs = 8000) {
+    const deadline = Date.now() + timeoutMs;
+    let latestNode = draftNode;
+    while (Date.now() < deadline) {
+      throwIfCancelled();
+      latestNode = findDraftStateNode() || latestNode;
+      if (refreshUploadMediaId(latestNode, upload)) return { draftNode: latestNode, mediaId: upload.mediaId };
+      await sleep(400);
+    }
+    latestNode = findDraftStateNode() || latestNode;
+    refreshUploadMediaId(latestNode, upload);
+    return { draftNode: latestNode, mediaId: upload?.mediaId || null };
   }
 
   function placeSelectionAtMarker(draftNode, marker) {
@@ -567,19 +680,36 @@
     await sleep(80);
 
     const before = existingMediaEntities(draftNode.props.editorState.getCurrentContent());
-    const preparedFile = await requestPreparedFile(imageOperation);
+    let preparedFile;
+    try {
+      preparedFile = await requestPreparedFile(imageOperation);
+    } catch (error) {
+      throwIfCancelled();
+      return { ok: false, error: error?.message || "Prepared image data was not available", recoverable: true };
+    }
     throwIfCancelled();
-    const file = base64ToFile(preparedFile.base64, preparedFile.fileName, preparedFile.mime);
+    let file;
+    try {
+      file = base64ToFile(preparedFile.base64, preparedFile.fileName, preparedFile.mime);
+    } catch (error) {
+      return { ok: false, error: error?.message || "Prepared image data was invalid", recoverable: true };
+    }
 
-    onFilesAdded([file]);
+    try {
+      onFilesAdded([file]);
+    } catch (error) {
+      return { ok: false, error: error?.message || "X upload handler failed", recoverable: true };
+    }
     const timeoutMs = Math.min(
       MEDIA_UPLOAD_MAX_TIMEOUT_MS,
       MEDIA_UPLOAD_BASE_TIMEOUT_MS + Math.max(0, Number(context.total || 0) - 1) * MEDIA_UPLOAD_PER_ITEM_TIMEOUT_MS
     );
-    const deadline = Date.now() + timeoutMs;
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
     let nextProgressAt = Date.now() + MEDIA_UPLOAD_PROGRESS_HEARTBEAT_MS;
     let pendingUpload = null;
-    let pendingSignature = "";
+    let pendingIdentitySignature = "";
+    let pendingDataSignature = "";
     let pendingFirstSeenAt = 0;
     let pendingStableSince = 0;
     while (Date.now() < deadline) {
@@ -600,7 +730,7 @@
       }
       draftNode = findDraftStateNode() || draftNode;
       const contentState = draftNode.props.editorState.getCurrentContent();
-      const found = findNewMediaUpload(contentState, before);
+      const found = findNewMediaUpload(contentState, before, existingAtomicBlocks);
       if (found?.mediaId) {
         existingAtomicBlocks.add(found.blockKey);
         return {
@@ -613,17 +743,22 @@
         };
       }
       if (found) {
-        const signature = `${found.entityKey}:${found.blockKey}`;
-        if (signature !== pendingSignature) {
-          pendingSignature = signature;
+        const identitySignature = `${found.entityKey}:${found.blockKey}`;
+        if (identitySignature !== pendingIdentitySignature) {
+          pendingIdentitySignature = identitySignature;
+          pendingDataSignature = found.dataSignature || "";
           pendingFirstSeenAt = now;
+          pendingStableSince = now;
+        } else if ((found.dataSignature || "") !== pendingDataSignature) {
+          pendingDataSignature = found.dataSignature || "";
           pendingStableSince = now;
         }
         pendingUpload = found;
         const pendingReady =
           canUsePendingMediaUpload(imageOperation) &&
-          now - pendingFirstSeenAt >= MEDIA_UPLOAD_PENDING_READY_MS &&
-          now - pendingStableSince >= MEDIA_UPLOAD_PENDING_STABLE_MS;
+          (now - pendingFirstSeenAt >= MEDIA_UPLOAD_PENDING_MAX_WAIT_MS ||
+            (now - pendingFirstSeenAt >= MEDIA_UPLOAD_PENDING_READY_MS &&
+              now - pendingStableSince >= MEDIA_UPLOAD_PENDING_STABLE_MS));
         if (pendingReady) {
           const index = Number(context.index || 0);
           const total = Number(context.total || 0);
@@ -637,6 +772,22 @@
             markerOffset: markerLocation.offset,
             markerLength: markerLocation.length,
             markerExact: markerLocation.exact
+          };
+        }
+      } else {
+        pendingUpload = null;
+        pendingIdentitySignature = "";
+        pendingDataSignature = "";
+        pendingFirstSeenAt = 0;
+        pendingStableSince = 0;
+        if (now - startedAt >= MEDIA_UPLOAD_NO_ENTITY_TIMEOUT_MS) {
+          return {
+            ok: false,
+            error: MEDIA_UPLOAD_TIMEOUT_ERROR,
+            timeout: true,
+            timeoutMs: MEDIA_UPLOAD_NO_ENTITY_TIMEOUT_MS,
+            pendingEntity: false,
+            noEntity: true
           };
         }
       }
@@ -736,7 +887,8 @@
         missing += 1;
         continue;
       }
-      let imageBlock = upload.entityKey ? entityToBlock.get(upload.entityKey) : null;
+      let imageBlock = upload.blockKey && blockMap.has(upload.blockKey) ? upload.blockKey : null;
+      if (!imageBlock && upload.entityKey) imageBlock = entityToBlock.get(upload.entityKey) || null;
       if (!imageBlock) {
         while (fallbackIndex < mediaBlocks.length && moves.has(mediaBlocks[fallbackIndex].blockKey)) {
           fallbackIndex += 1;
@@ -830,6 +982,28 @@
     nextEditorState = EditorState.moveSelectionToEnd(nextEditorState);
     draftNode.props.onChange(nextEditorState);
     return toDelete.length + replacements.length;
+  }
+
+  async function settleUploadedImageAtMarker(draftNode, upload, protectedAtomicBlocks) {
+    if (!upload || upload.coverOnly) {
+      return { draftNode, moved: 0, missing: 0, markerCleaned: 0 };
+    }
+    const relocateResult = relocateImages(draftNode, [upload], protectedAtomicBlocks);
+    if (relocateResult.moved || relocateResult.missing) {
+      await sleep(180);
+      draftNode = findDraftStateNode() || draftNode;
+    }
+    const markerCleaned = relocateResult.missing ? 0 : Number(replaceMarkerText(draftNode, upload.marker, ""));
+    if (markerCleaned) {
+      await sleep(120);
+      draftNode = findDraftStateNode() || draftNode;
+    }
+    return {
+      draftNode,
+      moved: relocateResult.moved,
+      missing: relocateResult.missing,
+      markerCleaned
+    };
   }
 
   function kickRender(draftNode) {
@@ -1046,6 +1220,7 @@
     let draftNode = findDraftStateNode();
     if (!draftNode) throw new Error("X Draft.js editor was not reachable");
     let articleId = articleIdFromUrl();
+    let markersWritten = false;
     const summary = {
       atomicOk: 0,
       atomicFail: 0,
@@ -1073,136 +1248,165 @@
       }
     };
 
-    await applyTitleMetadata(payload.title, articleId, summary);
-    draftNode = findDraftStateNode() || draftNode;
-
-    throwIfCancelled();
-    progress("Pasting structured Markdown...");
-    draftNode = await ensureDraftCharacterSample(draftNode);
-    throwIfCancelled();
-    const writeResult = writeDraftBlocks(draftNode, payload.blocks);
-    if (!writeResult.ok) {
-      console.warn(LOG, "structured block write failed; falling back to paste", writeResult.error);
-      pasteHtml(payload.html, payload.plain);
-    }
-    draftNode = await waitForDraftMarkers(payload.markerPrefix, (payload.plan || []).length);
-    if (!draftNode) throw new Error("X Draft.js editor was not reachable after writing Markdown");
-    await sleep(150);
-    throwIfCancelled();
-    articleId ||= articleIdFromUrl();
-    if (articleId) {
-      await applyTitleGraphqlMetadata(payload.title, articleId, summary);
-    }
-    if (payload.title && !summary.title.ui?.ok) {
+    try {
       await applyTitleMetadata(payload.title, articleId, summary);
       draftNode = findDraftStateNode() || draftNode;
-    }
 
-    const atomicOps = (payload.plan || []).filter((item) => item.op.type === "atomic");
-    const imageOps = (payload.plan || []).filter((item) => item.op.type === "image");
-
-    if (atomicOps.length) {
       throwIfCancelled();
-      progress(`Inserting ${atomicOps.length} special block(s)...`);
-      draftNode = findDraftStateNode() || draftNode;
-      const result = insertAtomicBatch(draftNode, atomicOps);
-      summary.atomicOk = result.okCount;
-      summary.atomicFail = result.failCount;
-      if (result.errors?.length) console.warn(LOG, "atomic failures", result.errors);
-      await sleep(350);
-    }
-
-    draftNode = findDraftStateNode() || draftNode;
-    const protectedAtomicBlocks = new Set();
-    draftNode.props.editorState
-      .getCurrentContent()
-      .getBlockMap()
-      .forEach((block, key) => {
-        if (block.getType() === "atomic") protectedAtomicBlocks.add(key);
-      });
-
-    const uploads = [];
-    let coverUpload = null;
-    for (let index = 0; index < imageOps.length; index += 1) {
+      progress("Pasting structured Markdown...");
+      draftNode = await ensureDraftCharacterSample(draftNode);
       throwIfCancelled();
-      draftNode = findDraftStateNode() || draftNode;
-      const op = imageOps[index];
-      progress(`Uploading image ${index + 1}/${imageOps.length}...`);
-      const result = await uploadImageAtMarker(draftNode, op, protectedAtomicBlocks, {
-        index: index + 1,
-        total: imageOps.length
-      });
-      if (result.ok) {
-        summary.imgOk += 1;
-        if (result.mediaPending) summary.imgPending += 1;
-        uploads.push({
-          marker: op.marker,
-          blockKey: result.blockKey,
-          entityKey: result.entityKey,
-          markerBlock: result.markerBlock,
-          markerOffset: result.markerOffset,
-          markerLength: result.markerLength,
-          markerExact: result.markerExact,
-          mediaId: result.mediaId,
-          source: op.op.source,
-          coverOnly: Boolean(op.op.coverOnly)
-        });
-        const upload = uploads[uploads.length - 1];
-        if (upload.coverOnly && !coverUpload) coverUpload = upload;
-        if (uploadMatchesCover(upload, payload.cover) && !summary.cover.graphql && !summary.cover.skippedReason) {
-          coverUpload = upload;
-          await applyCoverMetadata(payload.cover, articleId, upload, summary);
-        }
-      } else {
-        summary.imgFail += 1;
-        summary.imageErrors.push({
-          kind: imageOperationKind(op),
-          index: index + 1,
-          marker: op.marker,
-          source: op.op.source || null,
-          fileName: op.op.file?.fileName || null,
-          error: result.error || "Image upload failed"
-        });
-        replaceMarkerText(draftNode, op.marker, op.op.fallbackText || (op.op.coverOnly ? "" : "[image upload failed]"));
-        console.warn(LOG, "image failed", result.error);
+      const writeResult = writeDraftBlocks(draftNode, payload.blocks);
+      if (!writeResult.ok) {
+        console.warn(LOG, "structured block write failed; falling back to paste", writeResult.error);
+        pasteHtml(payload.html, payload.plain);
       }
-      draftNode = findDraftStateNode() || draftNode;
-    }
-
-    if (uploads.length) {
+      draftNode = await waitForDraftMarkers(payload.markerPrefix, (payload.plan || []).length);
+      if (!draftNode) throw new Error("X Draft.js editor was not reachable after writing Markdown");
+      markersWritten = true;
+      await sleep(150);
       throwIfCancelled();
-      progress("Reordering uploaded media...");
-      await sleep(900);
-      const result = relocateImages(draftNode, uploads.filter((upload) => !upload.coverOnly), protectedAtomicBlocks);
-      summary.relocatedImages = result.moved;
-      await sleep(400);
-    }
-
-    if (payload.cover) {
-      throwIfCancelled();
-      if (!summary.cover.graphql && !summary.cover.skippedReason && !articleId) {
-        summary.cover.skippedReason = "No article id in URL";
-        console.warn(LOG, "cover update skipped: no article id");
-      } else if (!summary.cover.graphql && !summary.cover.skippedReason) {
-        summary.cover.skippedReason = "Cover source was not uploaded; it may have stayed as a Markdown link";
-        console.info(LOG, "cover skipped because the source was not uploaded", payload.cover);
+      articleId ||= articleIdFromUrl();
+      if (articleId) {
+        await applyTitleGraphqlMetadata(payload.title, articleId, summary);
       }
-      if (coverUpload?.coverOnly && coverUpload.blockKey) {
-        await sleep(600);
+      if (payload.title && !summary.title.ui?.ok) {
+        await applyTitleMetadata(payload.title, articleId, summary);
         draftNode = findDraftStateNode() || draftNode;
-        const deleteResult = deleteBlockByKey(draftNode, coverUpload.blockKey);
-        summary.cover.bodyBlockDeleted = deleteResult;
-        if (!deleteResult.ok) console.warn(LOG, "cover block cleanup failed", deleteResult);
       }
-    }
 
-    progress("Cleaning up import markers...");
-    draftNode = findDraftStateNode() || draftNode;
-    summary.markersCleaned += cleanupMarkers(draftNode, payload.markerPrefix);
-    kickRender(draftNode);
-    await sleep(250);
-    throwIfCancelled();
-    post("done", { summary });
+      const atomicOps = (payload.plan || []).filter((item) => item.op.type === "atomic");
+      const imageOps = (payload.plan || []).filter((item) => item.op.type === "image");
+
+      if (atomicOps.length) {
+        throwIfCancelled();
+        progress(`Inserting ${atomicOps.length} special block(s)...`);
+        draftNode = findDraftStateNode() || draftNode;
+        const result = insertAtomicBatch(draftNode, atomicOps);
+        summary.atomicOk = result.okCount;
+        summary.atomicFail = result.failCount;
+        if (result.errors?.length) console.warn(LOG, "atomic failures", result.errors);
+        await sleep(350);
+      }
+
+      draftNode = findDraftStateNode() || draftNode;
+      const protectedAtomicBlocks = new Set();
+      draftNode.props.editorState
+        .getCurrentContent()
+        .getBlockMap()
+        .forEach((block, key) => {
+          if (block.getType() === "atomic") protectedAtomicBlocks.add(key);
+        });
+
+      const uploads = [];
+      let coverUpload = null;
+      for (let index = 0; index < imageOps.length; index += 1) {
+        throwIfCancelled();
+        draftNode = findDraftStateNode() || draftNode;
+        const op = imageOps[index];
+        progress(`Uploading image ${index + 1}/${imageOps.length}...`);
+        const result = await uploadImageAtMarker(draftNode, op, protectedAtomicBlocks, {
+          index: index + 1,
+          total: imageOps.length
+        });
+        if (result.ok) {
+          summary.imgOk += 1;
+          if (result.mediaPending) summary.imgPending += 1;
+          uploads.push({
+            marker: op.marker,
+            blockKey: result.blockKey,
+            entityKey: result.entityKey,
+            markerBlock: result.markerBlock,
+            markerOffset: result.markerOffset,
+            markerLength: result.markerLength,
+            markerExact: result.markerExact,
+            mediaId: result.mediaId,
+            source: op.op.source,
+            coverOnly: Boolean(op.op.coverOnly),
+            settled: Boolean(op.op.coverOnly)
+          });
+          const upload = uploads[uploads.length - 1];
+          if (!upload.coverOnly) {
+            progress(`Image ${index + 1}/${imageOps.length} is in the editor; continuing...`);
+            const settleResult = await settleUploadedImageAtMarker(draftNode, upload, protectedAtomicBlocks);
+            draftNode = settleResult.draftNode;
+            summary.relocatedImages += settleResult.moved;
+            summary.markersCleaned += settleResult.markerCleaned;
+            upload.settled = !settleResult.missing;
+          }
+          if (payload.cover && imageSourcesMatch(upload.source, payload.cover) && !upload.mediaId && !summary.cover.graphql && !summary.cover.skippedReason) {
+            const refreshed = await waitForUploadMediaId(draftNode, upload);
+            draftNode = refreshed.draftNode;
+          }
+          if (upload.coverOnly && !coverUpload) coverUpload = upload;
+          if (uploadMatchesCover(upload, payload.cover) && !summary.cover.graphql && !summary.cover.skippedReason) {
+            coverUpload = upload;
+            await applyCoverMetadata(payload.cover, articleId, upload, summary);
+          }
+        } else {
+          summary.imgFail += 1;
+          summary.imageErrors.push({
+            kind: imageOperationKind(op),
+            index: index + 1,
+            marker: op.marker,
+            source: op.op.source || null,
+            fileName: op.op.file?.fileName || null,
+            error: result.error || "Image upload failed"
+          });
+          replaceMarkerText(draftNode, op.marker, op.op.fallbackText || (op.op.coverOnly ? "" : "[image upload failed]"));
+          console.warn(LOG, "image failed", result.error);
+        }
+        draftNode = findDraftStateNode() || draftNode;
+      }
+
+      const unsettledUploads = uploads.filter((upload) => !upload.coverOnly && !upload.settled);
+      if (unsettledUploads.length) {
+        throwIfCancelled();
+        progress("Reordering uploaded media...");
+        await sleep(900);
+        const result = relocateImages(draftNode, unsettledUploads, protectedAtomicBlocks);
+        summary.relocatedImages += result.moved;
+        await sleep(400);
+      }
+
+      if (payload.cover) {
+        throwIfCancelled();
+        if (!summary.cover.graphql && !summary.cover.skippedReason && !articleId) {
+          summary.cover.skippedReason = "No article id in URL";
+          console.warn(LOG, "cover update skipped: no article id");
+        } else if (!summary.cover.graphql && !summary.cover.skippedReason) {
+          summary.cover.skippedReason = "Cover source was not uploaded; it may have stayed as a Markdown link";
+          console.info(LOG, "cover skipped because the source was not uploaded", payload.cover);
+        }
+        if (coverUpload?.coverOnly && coverUpload.blockKey) {
+          await sleep(600);
+          draftNode = findDraftStateNode() || draftNode;
+          const deleteResult = deleteBlockByKey(draftNode, coverUpload.blockKey);
+          summary.cover.bodyBlockDeleted = deleteResult;
+          if (!deleteResult.ok) console.warn(LOG, "cover block cleanup failed", deleteResult);
+        }
+      }
+
+      progress("Cleaning up import markers...");
+      draftNode = findDraftStateNode() || draftNode;
+      summary.markersCleaned += cleanupMarkers(draftNode, payload.markerPrefix);
+      kickRender(draftNode);
+      await sleep(250);
+      post("done", { summary });
+    } catch (error) {
+      if (markersWritten) {
+        try {
+          progress("Cleaning up import markers...", error?.cancelled ? "warn" : "work");
+          draftNode = findDraftStateNode() || draftNode;
+          summary.markersCleaned += cleanupMarkers(draftNode, payload.markerPrefix);
+          kickRender(draftNode);
+        } catch (cleanupError) {
+          console.warn(LOG, "marker cleanup after interrupted import failed", cleanupError);
+        }
+      }
+      error.summary = summary;
+      throw error;
+    }
   }
 
   window.addEventListener("message", (event) => {
@@ -1215,10 +1419,10 @@
       runFlow(event.data.payload).catch((error) => {
         console.error(LOG, error);
         if (error?.cancelled) {
-          post("cancelled", { reason: error.message || "Writing stopped by user." });
+          post("cancelled", { reason: error.message || "Writing stopped by user.", summary: error?.summary || null });
           return;
         }
-        post("error", { error: error?.message || String(error), stack: error?.stack || null });
+        post("error", { error: error?.message || String(error), stack: error?.stack || null, summary: error?.summary || null });
       });
       return;
     }
@@ -1231,7 +1435,7 @@
       try {
         const result = uploadFilesToEditor(event.data.files || []);
         if (result.ok) post("upload-files-done", { requestId: event.data.requestId, summary: result });
-        else post("upload-files-error", { requestId: event.data.requestId, error: result.error });
+        else post("upload-files-error", { requestId: event.data.requestId, error: result.error, failures: result.failures || [], summary: result });
       } catch (error) {
         console.error(LOG, error);
         post("upload-files-error", {

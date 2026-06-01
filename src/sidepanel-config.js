@@ -8,6 +8,7 @@
   const STORAGE_SUCCESS_FEEDBACK = "xposter_success_feedback";
   const STORAGE_RECORD_HISTORY = "xposter_publish_record_history";
   const STORAGE_DRAFT_QUEUE = "xposter_publish_queue";
+  const STORAGE_TARGET_TAB = "xposter_sidepanel_target_tab";
 
   const X_ARTICLE_MEDIA_LIMIT_WARNING =
     "Images: {count}/{limit}. Remove {extra} image(s) before writing.";
@@ -53,6 +54,7 @@
     STORAGE_SUCCESS_FEEDBACK,
     STORAGE_RECORD_HISTORY,
     STORAGE_DRAFT_QUEUE,
+    STORAGE_TARGET_TAB,
     MAX_RECORD_HISTORY: 30,
     MAX_DRAFT_QUEUE: 24,
     MAX_DRAFT_QUEUE_STORAGE_BYTES: 4 * 1024 * 1024,
@@ -85,7 +87,8 @@
       STORAGE_IMPORT_OPTIONS,
       STORAGE_ARTICLE_EXPORT_SETTINGS,
       STORAGE_SUCCESS_FEEDBACK,
-      STORAGE_LIVE_RESULT
+      STORAGE_LIVE_RESULT,
+      STORAGE_TARGET_TAB
     ],
     SYNTAX_HIGHLIGHT_DETAIL_LIMIT: 60000,
     THEME_MODES: new Set(["system", "light", "dark"]),

@@ -1936,14 +1936,14 @@ textarea::placeholder {
 button:focus-visible,
 select:focus-visible,
 input:focus-visible,
-textarea:focus-visible,
+textarea:not(#markdown):focus-visible,
 summary:focus-visible,
 .theme-control input:focus-visible + span {
   outline: 2px solid color-mix(in oklch, var(--signal), transparent 24%);
   outline-offset: 2px;
 }
 
-textarea:focus-visible,
+textarea:not(#markdown):focus-visible,
 .record-search input:focus-visible {
   box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--signal), transparent 66%);
 }

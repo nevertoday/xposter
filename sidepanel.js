@@ -16,6 +16,7 @@
     STORAGE_SUCCESS_FEEDBACK,
     STORAGE_RECORD_HISTORY,
     STORAGE_DRAFT_QUEUE,
+    STORAGE_TARGET_TAB,
     MAX_RECORD_HISTORY,
     MAX_DRAFT_QUEUE,
     MAX_DRAFT_QUEUE_STORAGE_BYTES,
@@ -101,6 +102,7 @@
   let activeDraftEditor = null;
   let liveResultChecks = {};
   let targetLock = null;
+  let targetTabId = null;
   let latestProgress = createLiveProgressState();
   let currentLanguage = preferredLanguage();
   let activeDraftRecordId = null;
@@ -998,7 +1000,7 @@
 
   async function requestPageSuccessCelebration(summary = null) {
     if (!successFeedbackOptions.confetti) return;
-    await sendToActiveTab({
+    await sendToTargetTab({
       type: "xposter:success-celebration",
       summary: {
         elapsedMs: Number(summary?.elapsedMs || 0),
@@ -1516,9 +1518,69 @@
     return tab || null;
   }
 
-  async function sendToActiveTab(message) {
-    const tab = await activeTab();
-    if (!tab?.id) return { ok: false, error: "No active tab" };
+  function isXUrl(url) {
+    return /^https:\/\/(?:x|twitter)\.com\//.test(String(url || ""));
+  }
+
+  function isXTab(tab) {
+    return Boolean(tab?.id && isXUrl(tab.url || ""));
+  }
+
+  function rememberTargetTab(tab) {
+    if (!isXTab(tab)) return null;
+    targetTabId = tab.id;
+    if (hasChromeApi() && STORAGE_TARGET_TAB) {
+      chrome.storage.local.set({
+        [STORAGE_TARGET_TAB]: {
+          id: tab.id,
+          url: tab.url || "",
+          windowId: tab.windowId || null,
+          savedAt: Date.now()
+        }
+      }).catch(() => {});
+    }
+    return tab;
+  }
+
+  async function tabById(tabId) {
+    if (!hasChromeApi() || !tabId) return null;
+    try {
+      return await chrome.tabs.get(tabId);
+    } catch {
+      return null;
+    }
+  }
+
+  async function targetTab({ requireArticles = false, preferStored = true } = {}) {
+    if (!hasChromeApi()) return null;
+    if (preferStored && targetTabId) {
+      const storedTab = await tabById(targetTabId);
+      if (isXTab(storedTab) && (!requireArticles || isArticlesUrl(storedTab.url))) return rememberTargetTab(storedTab);
+      targetTabId = null;
+    }
+    const active = await activeTab();
+    if (isXTab(active) && (!requireArticles || isArticlesUrl(active.url))) return rememberTargetTab(active);
+    const tabs = await chrome.tabs.query({ currentWindow: true, url: ["https://x.com/*", "https://twitter.com/*"] });
+    const xTab = requireArticles
+      ? tabs.find((tab) => isXTab(tab) && isArticlesUrl(tab.url))
+      : tabs.find(isXTab);
+    if (xTab) return rememberTargetTab(xTab);
+    return null;
+  }
+
+  async function restoreTargetTab(stored = null) {
+    if (!hasChromeApi()) return null;
+    const record = stored?.[STORAGE_TARGET_TAB] || null;
+    if (record?.id) {
+      const tab = await tabById(record.id);
+      if (isXTab(tab)) return rememberTargetTab(tab);
+    }
+    return targetTab({ preferStored: false });
+  }
+
+  async function sendToTargetTab(message, options = {}) {
+    const tab = await targetTab(options);
+    if (!tab?.id) return { ok: false, error: "No X tab" };
     try {
       return await chrome.tabs.sendMessage(tab.id, message);
     } catch (error) {
@@ -1531,7 +1593,7 @@
     importCancelRequested = true;
     updateLiveProgress();
     log("Stop requested. xPoster will stop before the next upload step.");
-    const response = await sendToActiveTab({ type: "xposter:cancel-import" });
+    const response = await sendToTargetTab({ type: "xposter:cancel-import" });
     if (!response?.ok) {
       importCancelRequested = false;
       log(response?.error ? `Stop request failed: ${localizeText(response.error)}` : "Stop request failed: active X tab did not respond");
@@ -3064,11 +3126,17 @@
     ].filter(Boolean);
     const markers = Array.from(new Set(candidates.flatMap((item) => item.markers || [])));
     const detected = candidates.some((item) => item.detected) || markers.length > 0;
+    const cleanedMarkers = Array.from(new Set(candidates.flatMap((item) => item.cleanedMarkers || [])));
+    const cleanupAttempted = candidates.some((item) => item.cleanupAttempted);
     return {
       detected,
       markers,
+      cleanupAttempted,
+      cleanedMarkers,
       detail: detected
         ? `Old Markdown importer detected${markers.length ? `: ${markers.join(", ")}` : "."}`
+        : cleanedMarkers.length
+          ? `Old Markdown importer residue was removed${cleanedMarkers.length ? `: ${cleanedMarkers.join(", ")}` : "."}`
         : ""
     };
   }
@@ -4797,14 +4865,14 @@
   }
 
   async function ensureXPageForVaultPrompt() {
-    const active = await activeTab();
-    if (!isArticlesUrl(active?.url)) {
+    const currentTarget = await targetTab();
+    if (!isArticlesUrl(currentTarget?.url)) {
       log("Opening X Articles so the page can ask for the local image folder.");
       await openArticles();
     }
     for (let attempt = 0; attempt < 12; attempt += 1) {
       await delay(attempt < 2 ? 300 : 650);
-      const response = await sendToActiveTab({ type: "xposter:page-status" });
+      const response = await sendToTargetTab({ type: "xposter:page-status" }, { requireArticles: true });
       if (response?.ok && response.isArticleRoute) {
         await refreshPageState().catch(() => {});
         return { ok: true };
@@ -4831,13 +4899,11 @@
         log("Local image folder selected. Continuing import.");
         return retryAfterChoose();
       }
-      if (!selected?.skipped) {
-        setDraftDropStatus("Local image folder needed", localImageFolderActionDetail(blocker.localImages), "error", {
-          action: "openArticles",
-          button: "Open X",
-          status: blocker.localImages || null
-        });
-      }
+      setDraftDropStatus("Local image folder needed", localImageFolderActionDetail(blocker.localImages), "error", {
+        action: "openArticles",
+        button: "Open X",
+        status: blocker.localImages || null
+      });
       return { ok: false, error: selected?.error || blocker.detail, localAssets: true };
     }
     log(blocker.detail || "Choose the local image folder before writing.");
@@ -5197,7 +5263,7 @@
     } else if (eventName === "status") {
       const text = String(payload.text || "").trim();
       if (!text && payload.level === "idle") {
-        if (latestProgress.state !== "complete" && latestProgress.state !== "error") {
+        if (latestProgress.state !== "complete" && latestProgress.state !== "error" && latestProgress.state !== "cancelled") {
           latestProgress.state = "idle";
           latestProgress.level = "idle";
           latestProgress.text = "Nothing is running";
@@ -5222,15 +5288,23 @@
       latestProgress.state = "error";
       latestProgress.level = "error";
       latestProgress.error = payload.error || "Unknown writing error";
+      const mainSummary = payload.summary || payload.mainSummary || null;
+      latestProgress.summary = mainSummary ? { main: mainSummary } : latestProgress.summary || null;
       latestProgress.text = "Writing failed";
-      latestProgress.detail = latestProgress.error;
+      latestProgress.detail = mainSummary
+        ? `${latestProgress.error}; ${summarizeProgressCompletion(latestProgress.summary)}`
+        : latestProgress.error;
       latestProgress.percent = Math.max(latestProgress.percent || 0, 100);
     } else if (eventName === "cancelled") {
       latestProgress.state = "cancelled";
       latestProgress.level = "warn";
       latestProgress.error = payload.reason || "Writing stopped by user.";
+      const mainSummary = payload.summary || payload.mainSummary || null;
+      latestProgress.summary = mainSummary ? { main: mainSummary } : latestProgress.summary || null;
       latestProgress.text = "Writing stopped by user.";
-      latestProgress.detail = payload.reason || "Writing stopped by user.";
+      latestProgress.detail = mainSummary
+        ? `${latestProgress.error}; ${summarizeProgressCompletion(latestProgress.summary)}`
+        : latestProgress.error;
       latestProgress.percent = Math.max(latestProgress.percent || 0, 100);
     } else if (eventName === "preflight-blocked") {
       latestProgress.state = "error";
@@ -5432,6 +5506,7 @@
       return;
     }
     const stored = await startupStorage();
+    await restoreTargetTab(stored);
     applyTheme(stored[STORAGE_THEME] || currentThemeMode);
     applyImportOptions(stored[STORAGE_IMPORT_OPTIONS] || importOptions, { refresh: false });
     applyArticleExportOptions(stored[STORAGE_ARTICLE_EXPORT_SETTINGS] || articleExportOptions);
@@ -5739,9 +5814,9 @@
   }
 
   async function refreshPageState() {
-    const tab = await activeTab();
+    const tab = await targetTab();
     const url = tab?.url || "";
-    if (!/^https:\/\/(?:x|twitter)\.com\//.test(url)) {
+    if (!isXUrl(url)) {
       latestPageStatus = null;
       latestDiagnostics = null;
       setPageState("Open X Articles entry", "action", "openArticles");
@@ -5751,7 +5826,7 @@
       updateProgressiveSections();
       return;
     }
-    const response = await sendToActiveTab({ type: "xposter:page-status" });
+    const response = await sendToTargetTab({ type: "xposter:page-status" });
     if (!response?.ok) {
       latestPageStatus = null;
       latestDiagnostics = null;
@@ -5815,10 +5890,15 @@
     let checks = buildPreflightChecks(preflightContext);
     const pageScriptCheck = checks.find((check) => check.id === "page-script");
     if (pageScriptCheck?.tone === "error") {
-      return { ok: false, reason: pageScriptCheck.detail, checks, targetContext: buildTargetContextEvidence() };
+      await refreshPageState();
+      checks = buildPreflightChecks(preflightContext);
+      const refreshedPageScriptCheck = checks.find((check) => check.id === "page-script");
+      if (refreshedPageScriptCheck?.tone === "error") {
+        return { ok: false, reason: refreshedPageScriptCheck.detail, checks, targetContext: buildTargetContextEvidence() };
+      }
     }
 
-    const active = await activeTab();
+    const active = await targetTab();
     if (!isArticlesUrl(active?.url)) {
       await openArticles();
     }
@@ -5829,7 +5909,7 @@
       const status = latestPageStatus || {};
       const needsDiagnostics = Boolean(status.isArticleRoute && status.hasEditor);
       if (needsDiagnostics) {
-        const response = await sendToActiveTab({ type: "xposter:diagnostics" });
+        const response = await sendToTargetTab({ type: "xposter:diagnostics" }, { requireArticles: true });
         latestDiagnostics = response?.ok ? response : { ok: false, error: response?.error || "Diagnostics unavailable" };
         if (response?.ok) lockTargetContext("write");
         updatePreflight();
@@ -5946,11 +6026,11 @@
       persistDraftQueue();
       renderDraftQueue();
     }
-    const response = await sendToActiveTab({
+    const response = await sendToTargetTab({
       type: "xposter:import-markdown",
       markdown,
       options: writeOptionsPayload({ forceNewArticle: batch, sourceFileName: writeSourceFileName })
-    });
+    }, { requireArticles: true });
     importCancelRequested = false;
     if (response?.ok) {
       const seconds = ((response.summary?.elapsedMs || 0) / 1000).toFixed(1);
@@ -5969,9 +6049,9 @@
     } else {
       log(`Import failed: ${response?.error || "unknown error"}`);
       if (response?.cancelled) {
-        recordLiveProgressEvent("cancelled", { reason: response?.error || "Writing stopped by user." });
+        recordLiveProgressEvent("cancelled", { reason: response?.error || "Writing stopped by user.", summary: response?.mainSummary || null });
       } else if (latestProgress.state !== "error") {
-        recordLiveProgressEvent("error", { error: response?.error || "unknown error" });
+        recordLiveProgressEvent("error", { error: response?.error || "unknown error", summary: response?.mainSummary || null });
       }
       captureEvidence("import-error", { result: response, targetContext: target.targetContext, pageStatus: latestPageStatus, diagnostics: latestDiagnostics });
       activeWriteQueueItemId = null;
@@ -6273,12 +6353,17 @@
       window.open("https://x.com/compose/articles", "_blank", "noopener");
       return;
     }
-    const tab = await activeTab();
+    const tab = await targetTab();
     if (tab?.id) {
-      if (isArticlesUrl(tab.url)) return;
-      await chrome.tabs.update(tab.id, { url: "https://x.com/compose/articles" });
+      if (isArticlesUrl(tab.url)) {
+        rememberTargetTab(tab);
+        return;
+      }
+      const updated = await chrome.tabs.update(tab.id, { active: true, url: "https://x.com/compose/articles" });
+      rememberTargetTab(updated || { ...tab, url: "https://x.com/compose/articles" });
     } else {
-      await chrome.tabs.create({ url: "https://x.com/compose/articles" });
+      const created = await chrome.tabs.create({ url: "https://x.com/compose/articles" });
+      rememberTargetTab(created);
     }
   }
 
@@ -6287,8 +6372,8 @@
       window.open("https://x.com/compose/articles", "_blank", "noopener");
       return;
     }
-    const tab = await activeTab();
-    if (tab?.id && /^https:\/\/(?:x|twitter)\.com\//.test(tab.url || "")) {
+    const tab = await targetTab();
+    if (isXTab(tab)) {
       await chrome.tabs.reload(tab.id);
       log("X Article tab refreshed.");
       await delay(900);
@@ -6540,11 +6625,11 @@
         return { ok: false, error: ready.error || "open an X page first" };
       }
     }
-    const response = await sendToActiveTab({
+    const response = await sendToTargetTab({
       type: "xposter:choose-vault",
       count: status.count || 0,
       hint: firstLocalImageFolderHint(status)
-    });
+    }, { requireArticles: true });
     if (response?.ok) {
       log(localizeInterpolated("Local image folder set: {name}.", { name: response.name }));
       await refreshPageState();
@@ -6552,8 +6637,9 @@
       return response;
     }
     if (response?.skipped) {
-      log("Local image folder selection skipped.");
-      return response;
+      const error = "Local image folder was not selected";
+      log(localizeText(error));
+      return { ok: false, error };
     }
     const error = response?.error || "open an X page first";
     log(localizeInterpolated("Local image folder setup failed: {error}", {
@@ -6570,7 +6656,7 @@
   }
 
   async function clearVault() {
-    const response = await sendToActiveTab({ type: "xposter:clear-vault" });
+    const response = await sendToTargetTab({ type: "xposter:clear-vault" });
     if (response?.ok) {
       log("Local image folder cleared.");
       await refreshPageState();
@@ -6687,32 +6773,40 @@
   async function runPreflight() {
     setBooleanPropertyIfChanged(els.runPreflight, "disabled", true);
     setLocalizedTextIfChanged(els.runPreflight, "Checking...");
-    log("Publishing check started.");
-    await refreshPageState();
-    const response = await sendToActiveTab({ type: "xposter:diagnostics" });
-    latestDiagnostics = response?.ok ? response : { ok: false, error: response?.error || "Diagnostics unavailable" };
-    await refreshRemoteImageAccessStatus(latestParsed);
-    const locked = response?.ok ? lockTargetContext("preflight") : null;
-    if (locked) {
-      log(localizeInterpolated("Article confirmed: {target}.", {
-        target: locked.context.articleId
-          ? `${localizeText("Article")} ${locked.context.articleId}`
-          : localizeText("the open X Article")
-      }));
+    try {
+      log("Publishing check started.");
+      await refreshPageState();
+      const response = await sendToTargetTab({ type: "xposter:diagnostics" }, { requireArticles: true });
+      latestDiagnostics = response?.ok ? response : { ok: false, error: response?.error || "Diagnostics unavailable" };
+      await refreshRemoteImageAccessStatus(latestParsed);
+      const locked = response?.ok ? lockTargetContext("preflight") : null;
+      if (locked) {
+        log(localizeInterpolated("Article confirmed: {target}.", {
+          target: locked.context.articleId
+            ? `${localizeText("Article")} ${locked.context.articleId}`
+            : localizeText("the open X Article")
+        }));
+      }
+      const checks = buildPreflightChecks();
+      updatePreflight(checks);
+      captureEvidence("preflight", {
+        checks,
+        targetLock,
+        pageStatus: latestPageStatus,
+        diagnostics: latestDiagnostics
+      });
+      const blockerCount = countItemsByTone(checks, "error");
+      if (blockerCount) log(`Publishing check found ${blockerCount} blocker(s).`);
+      else log("Publishing check passed without blockers.");
+    } catch (error) {
+      const message = error?.message || String(error);
+      latestDiagnostics = { ok: false, error: message };
+      log(localizeInterpolated("Publishing check failed: {error}", { error: localizeText(message) }));
+      updatePreflight();
+    } finally {
+      setBooleanPropertyIfChanged(els.runPreflight, "disabled", false);
+      setLocalizedTextIfChanged(els.runPreflight, "Check");
     }
-    const checks = buildPreflightChecks();
-    updatePreflight(checks);
-    captureEvidence("preflight", {
-      checks,
-      targetLock,
-      pageStatus: latestPageStatus,
-      diagnostics: latestDiagnostics
-    });
-    const blockerCount = countItemsByTone(checks, "error");
-    if (blockerCount) log(`Publishing check found ${blockerCount} blocker(s).`);
-    else log("Publishing check passed without blockers.");
-    setBooleanPropertyIfChanged(els.runPreflight, "disabled", false);
-    setLocalizedTextIfChanged(els.runPreflight, "Check");
   }
 
   function captureEvidence(kind, payload) {

@@ -697,6 +697,7 @@
       "Checking...": "检查中...",
       "Diagnostics unavailable": "诊断不可用",
       "Publishing check started.": "已开始发布前检查。",
+      "Publishing check failed: {error}": "发布前检查失败：{error}",
       "Publishing check passed without blockers.": "发布前检查已通过，没有阻塞项。",
       "Article confirmed: {target}.": "已确认文章：{target}。",
       "the open X Article": "当前打开的 X 文章",
