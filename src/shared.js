@@ -219,6 +219,81 @@
     return false;
   }
 
+  function smartPunctuationHasAdjacentContext(text, start, end = start) {
+    return (
+      isSmartPunctuationContextChar(smartPunctuationPrevNonspace(text, start)) ||
+      isSmartPunctuationContextChar(smartPunctuationNextNonspace(text, end))
+    );
+  }
+
+  function smartPunctuationHasWrapperContext(text, offset, matchLength, inner) {
+    const before = offset > 0 ? text[offset - 1] : "";
+    const after = offset + matchLength < text.length ? text[offset + matchLength] : "";
+    return (
+      isSmartPunctuationContextChar(before) ||
+      isSmartPunctuationContextChar(after) ||
+      SMART_PUNCT_CONTEXT_RE.test(inner)
+    );
+  }
+
+  function smartPunctuationHasClauseStarter(match) {
+    return match
+      .split(",")
+      .some((item) => SMART_PUNCT_CLAUSE_STARTERS.some((starter) => item.startsWith(starter)));
+  }
+
+  function smartPunctuationNeighborChars(text, index) {
+    return {
+      previous: index > 0 ? text[index - 1] : "",
+      next: index + 1 < text.length ? text[index + 1] : ""
+    };
+  }
+
+  function shouldPreserveAsciiNumericPunctuation(previous, next) {
+    return isAsciiDigit(previous) && isAsciiDigit(next);
+  }
+
+  function smartPunctuationPairReplacement(text, index, char) {
+    const { previous, next } = smartPunctuationNeighborChars(text, index);
+    if ((char === "," || char === ":") && shouldPreserveAsciiNumericPunctuation(previous, next)) {
+      return char;
+    }
+
+    const previousContent = smartPunctuationPrevContentChar(text, index);
+    const nextContent = smartPunctuationNextNonspace(text, index);
+    if (char === ":") {
+      return shouldUseSmartPunctuationFullwidth(previousContent, nextContent) ? "：" : char;
+    }
+
+    const terminal = char === "!" || char === "?";
+    return shouldUseSmartPunctuationFullwidth(previousContent, nextContent, { terminal })
+      ? SMART_PUNCT_PAIR_FULL.get(char)
+      : char;
+  }
+
+  function smartPunctuationPeriodReplacement(text, index) {
+    const { previous, next } = smartPunctuationNeighborChars(text, index);
+    if (shouldPreserveAsciiNumericPunctuation(previous, next) || previous === "." || next === ".") {
+      return ".";
+    }
+    return shouldUseSmartPunctuationFullwidth(
+      smartPunctuationPrevContentChar(text, index),
+      smartPunctuationNextNonspace(text, index),
+      { terminal: true }
+    ) ? "。" : ".";
+  }
+
+  function smartPunctuationCharReplacement(text, index) {
+    const char = text[index];
+    if (SMART_PUNCT_PAIR_FULL.has(char)) return smartPunctuationPairReplacement(text, index, char);
+    if (char === ".") return smartPunctuationPeriodReplacement(text, index);
+    return char;
+  }
+
+  function normalizeSmartPunctuationValue(value, enabled) {
+    return value && enabled ? normalizeSmartPunctuationText(value) : value;
+  }
+
   function maskSmartPunctuationProtectedText(text) {
     const store = [];
     const stash = (match) => {
@@ -245,28 +320,16 @@
     let text = masked.replace(/\u3000/g, " ");
 
     text = text.replace(/\.{3,}/g, (match, offset) =>
-      isSmartPunctuationContextChar(smartPunctuationPrevNonspace(text, offset)) ||
-        isSmartPunctuationContextChar(smartPunctuationNextNonspace(text, offset + match.length - 1))
-        ? "……"
-        : match
+      smartPunctuationHasAdjacentContext(text, offset, offset + match.length - 1) ? "……" : match
     );
 
     text = text.replace(SMART_PUNCT_ENUM_RE, (match) => {
-      const items = match.split(",");
-      if (items.some((item) => SMART_PUNCT_CLAUSE_STARTERS.some((starter) => item.startsWith(starter)))) {
-        return match;
-      }
+      if (smartPunctuationHasClauseStarter(match)) return match;
       return match.replace(/,/g, "、");
     });
 
     text = text.replace(/"([^"\n]*)"/g, (match, inner, offset) => {
-      const before = offset > 0 ? text[offset - 1] : "";
-      const after = offset + match.length < text.length ? text[offset + match.length] : "";
-      return isSmartPunctuationContextChar(before) ||
-        isSmartPunctuationContextChar(after) ||
-        SMART_PUNCT_CONTEXT_RE.test(inner)
-        ? `“${inner}”`
-        : match;
+      return smartPunctuationHasWrapperContext(text, offset, match.length, inner) ? `“${inner}”` : match;
     });
 
     text = text.replace(/'([^'\n]*)'/g, (match, inner) =>
@@ -274,64 +337,17 @@
     );
 
     text = text.replace(/\(([^()\n]*)\)/g, (match, inner, offset) => {
-      const before = offset > 0 ? text[offset - 1] : "";
-      const after = offset + match.length < text.length ? text[offset + match.length] : "";
-      return isSmartPunctuationContextChar(before) ||
-        isSmartPunctuationContextChar(after) ||
-        SMART_PUNCT_CONTEXT_RE.test(inner)
-        ? `（${inner}）`
-        : match;
+      return smartPunctuationHasWrapperContext(text, offset, match.length, inner) ? `（${inner}）` : match;
     });
 
     const output = [];
     for (let index = 0; index < text.length; index += 1) {
-      const char = text[index];
-      if (SMART_PUNCT_PAIR_FULL.has(char)) {
-        const previous = index > 0 ? text[index - 1] : "";
-        const next = index + 1 < text.length ? text[index + 1] : "";
-        const previousContent = smartPunctuationPrevContentChar(text, index);
-        const nextContent = smartPunctuationNextNonspace(text, index);
-
-        if ((char === "," || char === ":") && isAsciiDigit(previous) && isAsciiDigit(next)) {
-          output.push(char);
-          continue;
-        }
-        if (char === ":") {
-          output.push(shouldUseSmartPunctuationFullwidth(previousContent, nextContent) ? "：" : char);
-          continue;
-        }
-        output.push(
-          shouldUseSmartPunctuationFullwidth(previousContent, nextContent, { terminal: char === "!" || char === "?" })
-            ? SMART_PUNCT_PAIR_FULL.get(char)
-            : char
-        );
-        continue;
-      }
-
-      if (char === ".") {
-        const previous = index > 0 ? text[index - 1] : "";
-        const next = index + 1 < text.length ? text[index + 1] : "";
-        if ((isAsciiDigit(previous) && isAsciiDigit(next)) || previous === "." || next === ".") {
-          output.push(char);
-          continue;
-        }
-        output.push(shouldUseSmartPunctuationFullwidth(
-          smartPunctuationPrevContentChar(text, index),
-          smartPunctuationNextNonspace(text, index),
-          { terminal: true }
-        ) ? "。" : char);
-        continue;
-      }
-
-      output.push(char);
+      output.push(smartPunctuationCharReplacement(text, index));
     }
 
     text = output.join("");
     text = text.replace(/-{2,}|—+/g, (match, offset) =>
-      isSmartPunctuationContextChar(smartPunctuationPrevNonspace(text, offset)) ||
-        isSmartPunctuationContextChar(smartPunctuationNextNonspace(text, offset + match.length - 1))
-        ? "——"
-        : match
+      smartPunctuationHasAdjacentContext(text, offset, offset + match.length - 1) ? "——" : match
     );
 
     return unmaskSmartPunctuationProtectedText(text, store);
@@ -343,13 +359,9 @@
     const smartPunctuation = options.smartPunctuation === true;
     const { body, meta } = parseFrontmatter(markdown);
     const titleFromMetaRaw = meta.title || meta.Title || meta["标题"] || null;
-    const titleFromMeta = titleFromMetaRaw && smartPunctuation
-      ? normalizeSmartPunctuationText(titleFromMetaRaw)
-      : titleFromMetaRaw;
+    const titleFromMeta = normalizeSmartPunctuationValue(titleFromMetaRaw, smartPunctuation);
     const titleCandidateRaw = extractTitle ? markdownTitleCandidateFromOptions(options) : "";
-    const titleCandidate = titleCandidateRaw && smartPunctuation
-      ? normalizeSmartPunctuationText(titleCandidateRaw)
-      : titleCandidateRaw;
+    const titleCandidate = normalizeSmartPunctuationValue(titleCandidateRaw, smartPunctuation);
     let cover = extractCover ? meta.cover || meta.Cover || meta["封面"] || null : null;
     if (cover) {
       cover = cover

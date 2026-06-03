@@ -4,7 +4,12 @@
   const CHANNEL_FROM_MAIN = "xposter-main";
   const STATUS_ID = "__xposter_status__";
   const IMPORT_BUTTON_ID = "__xposter_import_button__";
+  const IMPORT_BUTTON_WRAP_ID = `${IMPORT_BUTTON_ID}_wrap`;
   const IMPORT_CONFIRM_ID = "__xposter_import_confirm__";
+  const IMPORT_STYLE_ID = "__xposter_import_style__";
+  const IMPORT_CONFIRM_MARGIN_PX = 12;
+  const IMPORT_CONFIRM_MAX_WIDTH_PX = 320;
+  const IMPORT_CONFIRM_ESTIMATED_HEIGHT_PX = 124;
   const DROP_HINT_ID = "__xposter_drop_hint__";
   const ARTICLE_EXPORT_ID = "__xposter_article_export__";
   const ARTICLE_EXPORT_STYLE_ID = "__xposter_article_export_style__";
@@ -3438,14 +3443,14 @@
   }
 
   function removeImportButton() {
-    document.getElementById(`${IMPORT_BUTTON_ID}_wrap`)?.remove();
+    document.getElementById(IMPORT_BUTTON_WRAP_ID)?.remove();
   }
 
   function ensureImportButton() {
-    let wrap = document.getElementById(`${IMPORT_BUTTON_ID}_wrap`);
+    let wrap = document.getElementById(IMPORT_BUTTON_WRAP_ID);
     if (wrap) return wrap;
     wrap = document.createElement("div");
-    wrap.id = `${IMPORT_BUTTON_ID}_wrap`;
+    wrap.id = IMPORT_BUTTON_WRAP_ID;
 
     const button = document.createElement("button");
     button.id = IMPORT_BUTTON_ID;
@@ -3487,7 +3492,7 @@
       seen.add(root);
       const buttons = Array.from(root.querySelectorAll("button, a[role='button']")).filter((button) => (
         button.id !== IMPORT_BUTTON_ID &&
-        !button.closest?.(`#${IMPORT_BUTTON_ID}_wrap`) &&
+        !button.closest?.(`#${IMPORT_BUTTON_WRAP_ID}`) &&
         isElementVisible(button)
       ));
       const rightSideButton = buttons
@@ -3546,18 +3551,18 @@
   }
 
   function injectImportButtonStyles() {
-    if (document.getElementById("__xposter_import_style__")) return;
+    if (document.getElementById(IMPORT_STYLE_ID)) return;
     const style = document.createElement("style");
-    style.id = "__xposter_import_style__";
+    style.id = IMPORT_STYLE_ID;
     style.textContent = `
-      #${IMPORT_BUTTON_ID}_wrap {
+      #${IMPORT_BUTTON_WRAP_ID} {
         display: inline-flex;
         align-items: center;
         min-height: 44px;
         margin-right: 8px;
         flex: 0 0 auto;
       }
-      #${IMPORT_BUTTON_ID}_wrap.__xposter_import_fallback {
+      #${IMPORT_BUTTON_WRAP_ID}.__xposter_import_fallback {
         position: fixed;
         z-index: 2147483646;
         top: 18px;
@@ -3566,7 +3571,6 @@
         pointer-events: auto;
       }
       #${IMPORT_BUTTON_ID} {
-        min-width: 0;
         min-height: 36px;
         min-width: 44px;
         border: 1px solid rgba(83, 100, 113, 0.28);
@@ -3610,7 +3614,7 @@
       #${IMPORT_BUTTON_ID} .__xposter_import_label {
         display: inline-block;
       }
-      #${IMPORT_BUTTON_ID}_wrap.__xposter_import_fallback #${IMPORT_BUTTON_ID} {
+      #${IMPORT_BUTTON_WRAP_ID}.__xposter_import_fallback #${IMPORT_BUTTON_ID} {
         background: rgba(255, 255, 255, 0.96);
         border-color: rgba(207, 217, 222, 0.92);
         box-shadow: 0 10px 28px rgba(15, 20, 25, 0.12);
@@ -3626,7 +3630,7 @@
           background: rgba(47, 51, 54, 0.98);
           border-color: rgba(113, 118, 123, 0.58);
         }
-        #${IMPORT_BUTTON_ID}_wrap.__xposter_import_fallback #${IMPORT_BUTTON_ID} {
+        #${IMPORT_BUTTON_WRAP_ID}.__xposter_import_fallback #${IMPORT_BUTTON_ID} {
           background: rgba(22, 24, 28, 0.96);
           border-color: rgba(83, 100, 113, 0.78);
           box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
@@ -3647,7 +3651,7 @@
           clip: rect(0 0 0 0);
           white-space: nowrap;
         }
-        #${IMPORT_BUTTON_ID}_wrap.__xposter_import_fallback {
+        #${IMPORT_BUTTON_WRAP_ID}.__xposter_import_fallback {
           top: 12px;
           right: 12px;
         }
@@ -3777,30 +3781,9 @@
   }
 
   function showImportOverwriteConfirm() {
-    document.getElementById(IMPORT_CONFIRM_ID)?.remove();
+    removeImportOverwriteConfirmPanel();
     return new Promise((resolve) => {
-      const panel = document.createElement("section");
-      panel.id = IMPORT_CONFIRM_ID;
-      panel.setAttribute("role", "alertdialog");
-      panel.setAttribute("aria-modal", "false");
-      panel.setAttribute("aria-labelledby", `${IMPORT_CONFIRM_ID}_title`);
-      panel.setAttribute("aria-describedby", `${IMPORT_CONFIRM_ID}_detail`);
-      panel.innerHTML = `
-        <strong id="${IMPORT_CONFIRM_ID}_title"></strong>
-        <p id="${IMPORT_CONFIRM_ID}_detail"></p>
-        <div class="__xposter_import_confirm_actions">
-          <button class="__xposter_import_confirm_cancel" type="button"></button>
-          <button class="__xposter_import_confirm_continue" type="button"></button>
-        </div>
-      `;
-      const title = panel.querySelector("strong");
-      const detail = panel.querySelector("p");
-      const cancel = panel.querySelector(".__xposter_import_confirm_cancel");
-      const proceed = panel.querySelector(".__xposter_import_confirm_continue");
-      setTextContentIfChanged(title, translateContentText("Replace current draft?"));
-      setTextContentIfChanged(detail, translateContentText("Importing Markdown will replace the title or body already in this X Article draft."));
-      setTextContentIfChanged(cancel, translateContentText("Cancel"));
-      setTextContentIfChanged(proceed, translateContentText("Continue import"));
+      const { panel, cancel, proceed } = buildImportOverwriteConfirmPanel();
       const finish = (ok) => {
         window.removeEventListener("keydown", onKeyDown, true);
         window.removeEventListener("resize", onResize);
@@ -3824,19 +3807,72 @@
     });
   }
 
+  function removeImportOverwriteConfirmPanel() {
+    document.getElementById(IMPORT_CONFIRM_ID)?.remove();
+  }
+
+  function buildImportOverwriteConfirmPanel() {
+    const panel = document.createElement("section");
+    panel.id = IMPORT_CONFIRM_ID;
+    panel.setAttribute("role", "alertdialog");
+    panel.setAttribute("aria-modal", "false");
+    panel.setAttribute("aria-labelledby", `${IMPORT_CONFIRM_ID}_title`);
+    panel.setAttribute("aria-describedby", `${IMPORT_CONFIRM_ID}_detail`);
+    panel.innerHTML = `
+      <strong id="${IMPORT_CONFIRM_ID}_title"></strong>
+      <p id="${IMPORT_CONFIRM_ID}_detail"></p>
+      <div class="__xposter_import_confirm_actions">
+        <button class="__xposter_import_confirm_cancel" type="button"></button>
+        <button class="__xposter_import_confirm_continue" type="button"></button>
+      </div>
+    `;
+    setImportOverwriteConfirmCopy(panel);
+    return {
+      panel,
+      cancel: panel.querySelector(".__xposter_import_confirm_cancel"),
+      proceed: panel.querySelector(".__xposter_import_confirm_continue")
+    };
+  }
+
+  function setImportOverwriteConfirmCopy(panel) {
+    setTextContentIfChanged(panel.querySelector("strong"), translateContentText("Replace current draft?"));
+    setTextContentIfChanged(
+      panel.querySelector("p"),
+      translateContentText("Importing Markdown will replace the title or body already in this X Article draft.")
+    );
+    setTextContentIfChanged(
+      panel.querySelector(".__xposter_import_confirm_cancel"),
+      translateContentText("Cancel")
+    );
+    setTextContentIfChanged(
+      panel.querySelector(".__xposter_import_confirm_continue"),
+      translateContentText("Continue import")
+    );
+  }
+
   function positionImportConfirmPanel(panel) {
     if (!panel) return;
     const trigger = document.getElementById(IMPORT_BUTTON_ID);
     const rect = trigger?.getBoundingClientRect?.();
-    const width = Math.min(320, Math.max(0, window.innerWidth - 24));
-    const left = rect
-      ? Math.min(window.innerWidth - width - 12, Math.max(12, rect.right - width))
-      : Math.max(12, window.innerWidth - width - 18);
-    const top = rect
-      ? Math.max(12, Math.min(window.innerHeight - 124, Math.max(12, rect.bottom + 8)))
-      : Math.max(12, Math.min(64, window.innerHeight - 124));
+    const width = Math.min(IMPORT_CONFIRM_MAX_WIDTH_PX, Math.max(0, window.innerWidth - IMPORT_CONFIRM_MARGIN_PX * 2));
+    const { left, top } = importConfirmPanelPosition(rect, width);
     setStylePropertyIfChanged(panel, "left", `${Math.round(left)}px`);
     setStylePropertyIfChanged(panel, "top", `${Math.round(top)}px`);
+  }
+
+  function importConfirmPanelPosition(rect, width) {
+    const maxLeft = window.innerWidth - width - IMPORT_CONFIRM_MARGIN_PX;
+    const maxTop = window.innerHeight - IMPORT_CONFIRM_ESTIMATED_HEIGHT_PX;
+    if (!rect) {
+      return {
+        left: Math.max(IMPORT_CONFIRM_MARGIN_PX, window.innerWidth - width - 18),
+        top: Math.max(IMPORT_CONFIRM_MARGIN_PX, Math.min(64, maxTop))
+      };
+    }
+    return {
+      left: Math.min(maxLeft, Math.max(IMPORT_CONFIRM_MARGIN_PX, rect.right - width)),
+      top: Math.max(IMPORT_CONFIRM_MARGIN_PX, Math.min(maxTop, Math.max(IMPORT_CONFIRM_MARGIN_PX, rect.bottom + 8)))
+    };
   }
 
   function articleDraftHasMeaningfulContent() {
