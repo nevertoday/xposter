@@ -10,6 +10,9 @@
   const IMPORT_CONFIRM_MARGIN_PX = 12;
   const IMPORT_CONFIRM_MAX_WIDTH_PX = 320;
   const IMPORT_CONFIRM_ESTIMATED_HEIGHT_PX = 124;
+  const IMPORT_BUTTON_ADJACENT_GAP_PX = 12;
+  const IMPORT_BUTTON_ADJACENT_ESTIMATED_WIDTH_PX = 172;
+  const IMPORT_BUTTON_ADJACENT_HEIGHT_PX = 52;
   const DROP_HINT_ID = "__xposter_drop_hint__";
   const ARTICLE_EXPORT_ID = "__xposter_article_export__";
   const ARTICLE_EXPORT_STYLE_ID = "__xposter_article_export_style__";
@@ -201,6 +204,11 @@
     currentMarkdown: "",
     cancelRequested: false,
     uploadRetryRequested: false,
+    dropHintFrame: 0,
+    dropHintDataTransfer: null,
+    dropHintIntent: "none",
+    dropHintMode: "markdown",
+    dropHintSurfaceFrame: 0,
     activeRun: null,
     statusTimer: 0,
     language: "en",
@@ -850,20 +858,21 @@
         --__xposter-status-progress: 0%;
         position: fixed;
         z-index: 2147483647;
-        top: 76px;
-        right: 18px;
-        width: min(340px, calc(100vw - 36px));
+        top: max(118px, calc(env(safe-area-inset-top, 0px) + 104px));
+        right: max(12px, env(safe-area-inset-right, 0px));
+        width: min(304px, calc(100vw - 24px));
         display: grid;
-        gap: 6px;
-        padding: 12px 14px 12px;
+        gap: 5px;
+        padding: 10px 12px;
         border: 1px solid var(--__xposter-status-line);
+        border-radius: 8px;
         overflow: hidden;
         isolation: isolate;
         background: var(--__xposter-status-paper);
         color: var(--__xposter-status-ink);
-        font: 13px/1.45 ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
+        font: 12.5px/1.42 ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
         letter-spacing: 0;
-        box-shadow: 0 16px 38px rgba(15, 20, 25, 0.10);
+        box-shadow: 0 10px 26px rgba(15, 20, 25, 0.10);
         pointer-events: auto;
         animation: __xposter_status_in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
       }
@@ -877,7 +886,7 @@
         --__xposter-status-ok: #6fc8a4;
         --__xposter-status-warn: #d8b765;
         --__xposter-status-danger: #ef7d86;
-        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.30);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.30);
       }
       #${STATUS_ID}::before {
         content: "";
@@ -945,17 +954,17 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 12px;
+        gap: 10px;
       }
       #${STATUS_ID} .__xposter_status_head span {
         color: var(--__xposter-status-muted);
-        font-size: 10px;
+        font-size: 9.5px;
         font-weight: 820;
         text-transform: uppercase;
       }
       #${STATUS_ID} .__xposter_status_head strong {
         color: var(--__xposter-status-tone-text);
-        font-size: 12px;
+        font-size: 11.5px;
         line-height: 1.2;
       }
       #${STATUS_ID} .__xposter_status_actions {
@@ -2514,7 +2523,7 @@
   }
 
   async function clickCreateButton() {
-    const labels = ["create", "compose", "撰写", "新建", "创建", "新規", "作成"];
+    const labels = ["create", "compose", "write", "撰写", "新建", "创建", "新規", "作成"];
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const button = findCreateButton(labels);
       if (button) {
@@ -2527,8 +2536,11 @@
   }
 
   function findCreateButton(labels) {
-    const emptyStateButton = document.querySelector("a[data-testid='empty_state_button_text']");
-    if (emptyStateButton) return emptyStateButton;
+    const emptyStateNode = document.querySelector("[data-testid='empty_state_button_text']");
+    const emptyStateButton = emptyStateNode?.closest?.("a, button, [role='button']");
+    if (emptyStateButton && emptyStateButton.id !== IMPORT_BUTTON_ID && !emptyStateButton.closest?.(`#${IMPORT_BUTTON_WRAP_ID}`)) {
+      return emptyStateButton;
+    }
     const root = document.getElementById("root-header")?.closest("div")?.parentElement || document;
     for (const path of root.querySelectorAll("button svg path")) {
       if ((path.getAttribute("d") || "").startsWith("M14.543")) {
@@ -2589,6 +2601,17 @@
     return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 
+  function requestContentFrame(callback) {
+    if (typeof window.requestAnimationFrame === "function") return window.requestAnimationFrame(callback);
+    return window.setTimeout(callback, 16);
+  }
+
+  function cancelContentFrame(frame) {
+    if (!frame) return;
+    if (typeof window.cancelAnimationFrame === "function") window.cancelAnimationFrame(frame);
+    else window.clearTimeout(frame);
+  }
+
   function isArticleExportRoute() {
     return !isArticleRoute() && (
       articleExportPathInfo().readable ||
@@ -2601,11 +2624,38 @@
     state.articleExport.syncTimer = window.setTimeout(syncArticleExportButton, delay);
   }
 
+  function scheduleArticleExportSyncFromMutations(mutations) {
+    if (shouldScheduleArticleExportSync(mutations)) scheduleArticleExportSync();
+  }
+
+  function shouldScheduleArticleExportSync(mutations = []) {
+    if (!state.articleExport.enabled) return false;
+    if (document.getElementById(ARTICLE_EXPORT_ID)) return true;
+    if (articleExportPathInfo().readable) return true;
+    return mutations.some((mutation) =>
+      mutationTouchesArticleExportSignal(mutation.addedNodes) ||
+      mutationTouchesArticleExportSignal(mutation.removedNodes)
+    );
+  }
+
+  function mutationTouchesArticleExportSignal(nodes) {
+    for (const node of nodes || []) {
+      if (nodeHasArticleExportSignal(node)) return true;
+    }
+    return false;
+  }
+
+  function nodeHasArticleExportSignal(node) {
+    if (!node || node.id === ARTICLE_EXPORT_ID) return false;
+    if (node.nodeType === 1 && node.matches?.(ARTICLE_EXPORT_LONGFORM_SELECTOR)) return true;
+    return Boolean(node.querySelector?.(ARTICLE_EXPORT_LONGFORM_SELECTOR));
+  }
+
   function installArticleExportButton() {
     injectArticleExportStyles();
     restoreArticleExportSettings().catch(() => applyArticleExportSettings());
     installArticleExportSettingsSync();
-    const observer = new MutationObserver(() => scheduleArticleExportSync());
+    const observer = new MutationObserver(scheduleArticleExportSyncFromMutations);
     observer.observe(document.body, { childList: true, subtree: true });
     window.addEventListener("popstate", () => scheduleArticleExportSync(260));
     window.addEventListener("resize", () => scheduleArticleExportSync(260), { passive: true });
@@ -3445,7 +3495,18 @@
     };
 
     syncImportButton();
-    new MutationObserver(mount).observe(document.body, { childList: true, subtree: true });
+    new MutationObserver((mutations) => {
+      if (shouldScheduleImportButtonSync(mutations)) mount();
+    }).observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", mount, { passive: true });
+    window.addEventListener("scroll", () => {
+      const confirmPanel = document.getElementById(IMPORT_CONFIRM_ID);
+      if (confirmPanel) {
+        positionImportConfirmPanel(confirmPanel);
+        return;
+      }
+      if (document.getElementById(IMPORT_BUTTON_WRAP_ID)?.dataset.placement === "button-adjacent") mount();
+    }, { passive: true });
     const originalPush = history.pushState;
     history.pushState = function (...args) {
       const result = originalPush.apply(this, args);
@@ -3459,6 +3520,10 @@
       return result;
     };
     window.addEventListener("popstate", () => window.setTimeout(syncImportButton, 100));
+  }
+
+  function shouldScheduleImportButtonSync() {
+    return isArticleRoute() || Boolean(document.getElementById(IMPORT_BUTTON_WRAP_ID));
   }
 
   function syncImportButton() {
@@ -3499,8 +3564,12 @@
 
   function findImportButtonAnchor() {
     const createButton = !isEditorRoute()
-      ? findCreateButton(["create", "compose", "撰写", "新建", "创建", "新規", "作成"])
+      ? findCreateButton(["create", "compose", "write", "撰写", "新建", "创建", "新規", "作成"])
       : null;
+    const editorActionAnchor = isEditorRoute() ? findEditorImportButtonActionAnchor() : null;
+    if (editorActionAnchor) return editorActionAnchor;
+    const adjacentAnchor = findImportButtonAdjacentAnchor(createButton);
+    if (adjacentAnchor) return adjacentAnchor;
     if (createButton?.parentElement?.parentElement) {
       return {
         container: createButton.parentElement.parentElement,
@@ -3509,6 +3578,115 @@
       };
     }
     return findImportButtonHeaderAnchor();
+  }
+
+  function findEditorImportButtonActionAnchor() {
+    const actionButton = findEditorTopActionButton();
+    if (!actionButton?.parentElement?.parentElement) return null;
+    return {
+      container: actionButton.parentElement.parentElement,
+      before: actionButton.parentElement,
+      placement: "editor-action"
+    };
+  }
+
+  function findEditorTopActionButton() {
+    const roots = [
+      document.getElementById("root-header")?.closest("div")?.parentElement,
+      document.querySelector("header[role='banner']"),
+      document.querySelector("header"),
+      document.querySelector("[role='main']")
+    ].filter(Boolean);
+    const preferredLabels = [
+      "post",
+      "publish",
+      "publish article",
+      "done",
+      "save",
+      "next",
+      "发布",
+      "发布文章",
+      "发表",
+      "完成",
+      "保存",
+      "下一步"
+    ];
+    const seen = new Set();
+    const candidates = [];
+    for (const root of roots) {
+      if (seen.has(root) || !isElementVisible(root)) continue;
+      seen.add(root);
+      for (const button of root.querySelectorAll("button, a[role='button']")) {
+        if (button.id === IMPORT_BUTTON_ID || button.closest?.(`#${IMPORT_BUTTON_WRAP_ID}`) || !isElementVisible(button)) continue;
+        const rect = button.getBoundingClientRect();
+        if (rect.top > 180 || rect.right < Math.max(260, window.innerWidth * 0.38)) continue;
+        const label = normalizeText([
+          button.getAttribute("aria-label"),
+          button.getAttribute("title"),
+          button.textContent
+        ].filter(Boolean).join(" ")).toLowerCase();
+        if (/\b(?:cancel|back|close|markdown|xposter)\b/i.test(label)) continue;
+        const preferred = preferredLabels.some((item) => label === item || label.includes(item));
+        const primaryScore = isPrimaryActionLike(button) ? 1 : 0;
+        if (!preferred && !primaryScore) continue;
+        candidates.push({ button, rect, preferred, primaryScore });
+      }
+    }
+    return candidates
+      .sort((left, right) =>
+        Number(right.preferred) - Number(left.preferred) ||
+        right.primaryScore - left.primaryScore ||
+        right.rect.right - left.rect.right
+      )[0]?.button || null;
+  }
+
+  function isPrimaryActionLike(button) {
+    const style = getComputedStyle(button);
+    const background = style.backgroundColor || "";
+    const color = style.color || "";
+    if (/rgba?\(\s*29[,\s]+155[,\s]+240/i.test(background)) return true;
+    if (/rgba?\(\s*15[,\s]+20[,\s]+25/i.test(background)) return true;
+    return /rgba?\(\s*255[,\s]+255[,\s]+255/i.test(color) && !/rgba?\(\s*255[,\s]+255[,\s]+255[,\s/]+0(?:\.0+)?\s*\)/i.test(background);
+  }
+
+  function findImportButtonAdjacentAnchor(createButton) {
+    if (!isEmptyStateCreateButton(createButton) || !isElementVisible(createButton)) return null;
+    const rect = createButton.getBoundingClientRect();
+    if (rect.width < 40 || rect.height < 28) return null;
+    const { left, top } = importButtonAdjacentPosition(rect);
+    return {
+      container: document.body,
+      placement: "button-adjacent",
+      left,
+      top
+    };
+  }
+
+  function isEmptyStateCreateButton(button) {
+    if (!button || button.closest?.("header, [role='banner'], nav")) return false;
+    const rootHeader = document.getElementById("root-header");
+    if (rootHeader?.contains(button)) return false;
+    if (button.matches?.("[data-testid='empty_state_button_text']") || button.querySelector?.("[data-testid='empty_state_button_text']")) {
+      return true;
+    }
+    return normalizeText(button.textContent || "").toLowerCase() === "write";
+  }
+
+  function importButtonAdjacentPosition(rect) {
+    const margin = 12;
+    const viewportWidth = Math.max(1, window.innerWidth);
+    const viewportHeight = Math.max(1, window.innerHeight);
+    const maxRight = viewportWidth - margin;
+    const rightSideLeft = rect.right + IMPORT_BUTTON_ADJACENT_GAP_PX;
+    const fitsRight = rightSideLeft + IMPORT_BUTTON_ADJACENT_ESTIMATED_WIDTH_PX <= maxRight;
+    const rawLeft = fitsRight ? rightSideLeft : rect.left;
+    const rawTop = fitsRight
+      ? rect.top + rect.height / 2
+      : rect.bottom + IMPORT_BUTTON_ADJACENT_GAP_PX + IMPORT_BUTTON_ADJACENT_HEIGHT_PX / 2;
+    return {
+      left: Math.round(Math.min(Math.max(margin, rawLeft), maxRight - 44)),
+      top: Math.round(Math.min(Math.max(margin + IMPORT_BUTTON_ADJACENT_HEIGHT_PX / 2, rawTop), viewportHeight - margin - IMPORT_BUTTON_ADJACENT_HEIGHT_PX / 2))
+    };
   }
 
   function findImportButtonHeaderAnchor() {
@@ -3542,6 +3720,15 @@
   }
 
   function placeImportButton(wrap, anchor) {
+    if (anchor?.placement === "button-adjacent") {
+      setClassPresenceIfChanged(wrap, "__xposter_import_fallback", false);
+      setDatasetValueIfChanged(wrap, "placement", "button-adjacent");
+      setStylePropertyIfChanged(wrap, "--__xposter-import-anchor-left", `${anchor.left}px`);
+      setStylePropertyIfChanged(wrap, "--__xposter-import-anchor-top", `${anchor.top}px`);
+      if (wrap.parentElement !== document.body) document.body.appendChild(wrap);
+      return;
+    }
+    clearImportButtonAnchorPosition(wrap);
     if (anchor?.container) {
       setClassPresenceIfChanged(wrap, "__xposter_import_fallback", false);
       setDatasetValueIfChanged(wrap, "placement", anchor.placement || "inline");
@@ -3554,6 +3741,11 @@
     setDatasetValueIfChanged(wrap, "placement", "fallback");
     setClassPresenceIfChanged(wrap, "__xposter_import_fallback", true);
     if (wrap.parentElement !== document.body) document.body.appendChild(wrap);
+  }
+
+  function clearImportButtonAnchorPosition(wrap) {
+    removeStylePropertyIfChanged(wrap, "--__xposter-import-anchor-left");
+    removeStylePropertyIfChanged(wrap, "--__xposter-import-anchor-top");
   }
 
   function syncImportButtonCopy() {
@@ -3596,25 +3788,35 @@
       #${IMPORT_BUTTON_WRAP_ID}.__xposter_import_fallback {
         position: fixed;
         z-index: 2147483646;
-        top: 18px;
-        right: 18px;
+        top: max(72px, calc(env(safe-area-inset-top, 0px) + 60px));
+        right: max(12px, env(safe-area-inset-right, 0px));
         margin: 0;
         pointer-events: auto;
       }
+      #${IMPORT_BUTTON_WRAP_ID}[data-placement="button-adjacent"] {
+        position: fixed;
+        z-index: 2147483646;
+        left: var(--__xposter-import-anchor-left, 18px);
+        top: var(--__xposter-import-anchor-top, 140px);
+        min-height: 0;
+        margin: 0;
+        pointer-events: auto;
+        transform: translateY(-50%);
+      }
       #${IMPORT_BUTTON_ID} {
-        min-height: 36px;
+        min-height: 34px;
         min-width: 44px;
         border: 1px solid rgba(83, 100, 113, 0.28);
         border-radius: 999px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 7px;
-        padding: 0 12px 0 10px;
+        gap: 6px;
+        padding: 0 11px 0 9px;
         background: rgba(239, 243, 244, 0.82);
         color: rgb(15, 20, 25);
         cursor: pointer;
-        font: 700 13px/1 ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
+        font: 700 12.5px/1 ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
         letter-spacing: 0;
         white-space: nowrap;
         box-shadow: none;
@@ -3637,8 +3839,8 @@
         transform: none;
       }
       #${IMPORT_BUTTON_ID} svg {
-        width: 18px;
-        height: 18px;
+        width: 17px;
+        height: 17px;
         flex: 0 0 auto;
         fill: currentColor;
       }
@@ -3648,7 +3850,24 @@
       #${IMPORT_BUTTON_WRAP_ID}.__xposter_import_fallback #${IMPORT_BUTTON_ID} {
         background: rgba(255, 255, 255, 0.96);
         border-color: rgba(207, 217, 222, 0.92);
-        box-shadow: 0 10px 28px rgba(15, 20, 25, 0.12);
+        box-shadow: 0 8px 22px rgba(15, 20, 25, 0.11);
+      }
+      #${IMPORT_BUTTON_WRAP_ID}[data-placement="button-adjacent"] #${IMPORT_BUTTON_ID} {
+        min-height: 52px;
+        height: 52px;
+        padding: 0 18px 0 16px;
+        background: rgba(29, 155, 240, 0.10);
+        border-color: rgba(29, 155, 240, 0.28);
+        color: #0f6cbf;
+        box-shadow: none;
+      }
+      #${IMPORT_BUTTON_WRAP_ID}[data-placement="button-adjacent"] #${IMPORT_BUTTON_ID}:hover {
+        background: rgba(29, 155, 240, 0.16);
+        border-color: rgba(29, 155, 240, 0.38);
+      }
+      #${IMPORT_BUTTON_WRAP_ID}[data-placement="button-adjacent"] #${IMPORT_BUTTON_ID} svg {
+        width: 18px;
+        height: 18px;
       }
       @media (prefers-color-scheme: dark) {
         #${IMPORT_BUTTON_ID} {
@@ -3664,7 +3883,16 @@
         #${IMPORT_BUTTON_WRAP_ID}.__xposter_import_fallback #${IMPORT_BUTTON_ID} {
           background: rgba(22, 24, 28, 0.96);
           border-color: rgba(83, 100, 113, 0.78);
-          box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
+          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.30);
+        }
+        #${IMPORT_BUTTON_WRAP_ID}[data-placement="button-adjacent"] #${IMPORT_BUTTON_ID} {
+          background: rgba(102, 169, 216, 0.16);
+          border-color: rgba(102, 169, 216, 0.38);
+          color: #9ccbec;
+        }
+        #${IMPORT_BUTTON_WRAP_ID}[data-placement="button-adjacent"] #${IMPORT_BUTTON_ID}:hover {
+          background: rgba(102, 169, 216, 0.22);
+          border-color: rgba(102, 169, 216, 0.50);
         }
       }
       @media (max-width: 520px) {
@@ -3683,8 +3911,13 @@
           white-space: nowrap;
         }
         #${IMPORT_BUTTON_WRAP_ID}.__xposter_import_fallback {
-          top: 12px;
-          right: 12px;
+          top: max(64px, calc(env(safe-area-inset-top, 0px) + 56px));
+          right: max(10px, env(safe-area-inset-right, 0px));
+        }
+        #${IMPORT_BUTTON_WRAP_ID}[data-placement="button-adjacent"] #${IMPORT_BUTTON_ID} {
+          width: 44px;
+          height: 44px;
+          padding: 0;
         }
       }
       @media (prefers-reduced-motion: reduce) {
@@ -3965,7 +4198,7 @@
       const intent = dropIntentForEvent(event);
       if (intent === "none") return;
       event.preventDefault();
-      showDropHint(event.dataTransfer, event, intent);
+      scheduleDropHint(event.dataTransfer, intent, dropHintMode(event.dataTransfer, intent));
       event.dataTransfer.dropEffect = "copy";
     }, true);
     document.addEventListener("dragleave", (event) => {
@@ -3977,6 +4210,7 @@
       event.preventDefault();
       event.stopPropagation();
       let files = transferFilesFromDataTransfer(event.dataTransfer);
+      cancelScheduledDropHint();
       if (hasFiles(event.dataTransfer) && transferHasFileSystemHandleItems(event.dataTransfer)) {
         files = await resolveTransferFilesFromDataTransfer(event.dataTransfer, files);
       }
@@ -4058,8 +4292,28 @@
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") hideDropHint();
     });
-    window.addEventListener("resize", updateVisibleDropHintSurface, { passive: true });
-    window.addEventListener("scroll", updateVisibleDropHintSurface, { passive: true, capture: true });
+    window.addEventListener("resize", scheduleVisibleDropHintSurfaceUpdate, { passive: true });
+    window.addEventListener("scroll", scheduleVisibleDropHintSurfaceUpdate, { passive: true, capture: true });
+  }
+
+  function scheduleDropHint(dataTransfer, intent, mode = dropHintMode(dataTransfer, intent)) {
+    state.dropHintDataTransfer = dataTransfer || null;
+    state.dropHintIntent = intent || "none";
+    state.dropHintMode = mode || "markdown";
+    if (state.dropHintFrame) return;
+    state.dropHintFrame = requestContentFrame(() => {
+      state.dropHintFrame = 0;
+      if (state.dropHintIntent === "none") return;
+      showDropHint(state.dropHintDataTransfer, null, state.dropHintIntent, state.dropHintMode);
+    });
+  }
+
+  function cancelScheduledDropHint() {
+    cancelContentFrame(state.dropHintFrame);
+    state.dropHintFrame = 0;
+    state.dropHintDataTransfer = null;
+    state.dropHintIntent = "none";
+    state.dropHintMode = "markdown";
   }
 
   function dropIntentForEvent(event) {
@@ -4310,8 +4564,7 @@
     }
   }
 
-  function showDropHint(dataTransfer = null, event = null, intent = dropIntentForTransfer(dataTransfer, event)) {
-    const mode = dropHintMode(dataTransfer, intent);
+  function showDropHint(dataTransfer = null, event = null, intent = dropIntentForTransfer(dataTransfer, event), mode = dropHintMode(dataTransfer, intent)) {
     const surface = dropHintSurfaceKind(intent);
     let hint = document.getElementById(DROP_HINT_ID);
     if (!hint) {
@@ -4431,6 +4684,9 @@
   }
 
   function hideDropHint() {
+    cancelScheduledDropHint();
+    cancelContentFrame(state.dropHintSurfaceFrame);
+    state.dropHintSurfaceFrame = 0;
     document.getElementById(DROP_HINT_ID)?.remove();
   }
 
@@ -4449,6 +4705,14 @@
   function updateVisibleDropHintSurface() {
     const hint = document.getElementById(DROP_HINT_ID);
     if (hint) updateDropHintSurface(hint, hint.dataset.intent || "article");
+  }
+
+  function scheduleVisibleDropHintSurfaceUpdate() {
+    if (!document.getElementById(DROP_HINT_ID) || state.dropHintSurfaceFrame) return;
+    state.dropHintSurfaceFrame = requestContentFrame(() => {
+      state.dropHintSurfaceFrame = 0;
+      updateVisibleDropHintSurface();
+    });
   }
 
   function updateDropHintSurface(hint, intent = "article") {
@@ -4488,7 +4752,7 @@
 
   function pageDropDockSurfaceRect() {
     const margin = 0;
-    const height = Math.min(168, Math.max(128, Math.round(window.innerHeight * 0.18)));
+    const height = Math.min(112, Math.max(84, Math.round(window.innerHeight * 0.11)));
     return normalizeDropSurfaceRect({
       left: 0,
       top: window.innerHeight - height - margin,
@@ -4507,7 +4771,7 @@
     const containerRect = editorSurfaceRect(editor, editorRect) || editorRect;
     const margin = 10;
     const width = Math.max(280, containerRect.width);
-    const height = Math.min(96, Math.max(66, Math.round(window.innerHeight * 0.09)));
+    const height = Math.min(76, Math.max(54, Math.round(window.innerHeight * 0.07)));
     const top = Math.min(
       window.innerHeight - height - margin,
       Math.max(margin, containerRect.bottom - height - margin)
@@ -4727,19 +4991,19 @@
         line-height: 1.35;
       }
       #${DROP_HINT_ID}[data-surface="page-dock"] {
-        height: var(--xposter-drop-surface-height, 132px);
-        padding: 18px max(18px, calc((100vw - 980px) / 2));
+        height: var(--xposter-drop-surface-height, 96px);
+        padding: 11px max(16px, calc((100vw - 940px) / 2));
       }
       #${DROP_HINT_ID}[data-surface="page-dock"]::before {
-        border: 1px solid rgba(29, 155, 240, 0.42);
+        border: 1px solid rgba(29, 155, 240, 0.32);
         border-bottom: 0;
         border-radius: 8px 8px 0 0;
         background:
-          linear-gradient(180deg, rgba(232, 246, 255, 0.98), rgba(214, 238, 255, 0.96));
+          linear-gradient(180deg, rgba(248, 252, 255, 0.96), rgba(232, 246, 255, 0.93));
         box-shadow:
-          0 -14px 34px rgba(29, 155, 240, 0.16),
+          0 -8px 22px rgba(29, 155, 240, 0.11),
           inset 0 1px 0 rgba(255, 255, 255, 0.86),
-          inset 0 0 0 1px rgba(29, 155, 240, 0.08);
+          inset 0 0 0 1px rgba(29, 155, 240, 0.06);
         transform-origin: 50% 50%;
         transform-box: border-box;
         will-change: transform, box-shadow, opacity;
@@ -4747,16 +5011,15 @@
       #${DROP_HINT_ID}[data-surface="page-dock"]::after {
         content: "";
         position: absolute;
-        left: max(18px, calc((100vw - 980px) / 2));
-        right: max(18px, calc((100vw - 980px) / 2));
-        top: 16px;
-        bottom: 16px;
+        left: max(16px, calc((100vw - 940px) / 2));
+        right: max(16px, calc((100vw - 940px) / 2));
+        top: 10px;
+        bottom: 10px;
         height: auto;
-        border: 1.5px dashed rgba(29, 155, 240, 0.48);
+        border: 1px dashed rgba(29, 155, 240, 0.40);
         border-radius: 8px;
-        opacity: 1;
-        background: rgba(255, 255, 255, 0.46);
-        overflow: hidden;
+        opacity: 0.88;
+        background: rgba(255, 255, 255, 0.32);
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.62);
         transform-origin: 50% 50%;
         transform-box: border-box;
@@ -4772,11 +5035,11 @@
         animation: __xposter_drop_dock_receive 2.2s ease-in-out infinite;
       }
       #${DROP_HINT_ID}[data-surface="page-dock"] .__xposter_drop_frame {
-        width: min(720px, 100%);
+        width: min(660px, 100%);
         display: grid;
-        grid-template-columns: 34px minmax(0, 1fr) auto;
+        grid-template-columns: 30px minmax(0, 1fr) auto;
         align-items: center;
-        gap: 12px;
+        gap: 10px;
       }
       #${DROP_HINT_ID}[data-mode="markdown"] {
         --xposter-drop-accent: var(--xposter-drop-signal);
@@ -4786,29 +5049,29 @@
       }
       #${DROP_HINT_ID}[data-mode="markdown"][data-surface="page-dock"]::before {
         background:
-          linear-gradient(180deg, rgba(238, 249, 255, 0.98), rgba(217, 240, 255, 0.97));
-        border-color: rgba(29, 155, 240, 0.52);
+          linear-gradient(180deg, rgba(248, 252, 255, 0.96), rgba(232, 246, 255, 0.93));
+        border-color: rgba(29, 155, 240, 0.34);
         box-shadow:
-          0 -14px 36px rgba(29, 155, 240, 0.18),
+          0 -8px 22px rgba(29, 155, 240, 0.12),
           inset 0 1px 0 rgba(255, 255, 255, 0.92),
-          inset 0 0 0 1px rgba(29, 155, 240, 0.10);
+          inset 0 0 0 1px rgba(29, 155, 240, 0.08);
       }
       #${DROP_HINT_ID}[data-mode="markdown"][data-surface="page-dock"]::after {
-        border-color: rgba(29, 155, 240, 0.58);
-        background: rgba(255, 255, 255, 0.54);
+        border-color: rgba(29, 155, 240, 0.42);
+        background: rgba(255, 255, 255, 0.36);
       }
       #${DROP_HINT_ID}[data-mode="folder"][data-surface="page-dock"]::before {
         background:
-          linear-gradient(180deg, rgba(238, 249, 255, 0.98), rgba(217, 240, 255, 0.97));
-        border-color: rgba(29, 155, 240, 0.52);
+          linear-gradient(180deg, rgba(248, 252, 255, 0.96), rgba(232, 246, 255, 0.93));
+        border-color: rgba(29, 155, 240, 0.34);
         box-shadow:
-          0 -14px 36px rgba(29, 155, 240, 0.18),
+          0 -8px 22px rgba(29, 155, 240, 0.12),
           inset 0 1px 0 rgba(255, 255, 255, 0.92),
-          inset 0 0 0 1px rgba(29, 155, 240, 0.10);
+          inset 0 0 0 1px rgba(29, 155, 240, 0.08);
       }
       #${DROP_HINT_ID}[data-mode="folder"][data-surface="page-dock"]::after {
-        border-color: rgba(29, 155, 240, 0.58);
-        background: rgba(255, 255, 255, 0.54);
+        border-color: rgba(29, 155, 240, 0.42);
+        background: rgba(255, 255, 255, 0.36);
       }
       #${DROP_HINT_ID}[data-mode="markdown"][data-surface="page-dock"] .__xposter_drop_frame {
         color: #0f3554;
@@ -4860,9 +5123,9 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 24px;
-        max-width: 112px;
-        padding: 4px 9px;
+        min-height: 22px;
+        max-width: 100px;
+        padding: 3px 8px;
         border: 1px solid color-mix(in srgb, var(--xposter-drop-accent), transparent 58%);
         border-radius: 999px;
         background: color-mix(in srgb, var(--xposter-drop-paper), transparent 14%);
@@ -4972,16 +5235,16 @@
         border-color: color-mix(in srgb, var(--xposter-drop-accent), transparent 42%);
       }
       #${DROP_HINT_ID}[data-surface="editor"] .__xposter_drop_frame {
-        width: min(520px, 100%);
+        width: min(460px, 100%);
         justify-content: center;
         text-align: left;
         display: flex;
         gap: 10px;
-        padding: 8px 10px;
+        padding: 7px 9px;
         border: 1px solid var(--xposter-drop-line);
         border-radius: 8px;
         background: color-mix(in srgb, var(--xposter-drop-paper), transparent 10%);
-        box-shadow: 0 12px 30px rgba(15, 20, 25, 0.10);
+        box-shadow: 0 8px 22px rgba(15, 20, 25, 0.09);
       }
       #${DROP_HINT_ID}[data-surface="editor"] p {
         max-width: 24rem;
@@ -5046,15 +5309,15 @@
           transform: scale(1);
           opacity: 1;
           box-shadow:
-            0 -14px 36px rgba(29, 155, 240, 0.18),
+            0 -8px 22px rgba(29, 155, 240, 0.12),
             inset 0 1px 0 rgba(255, 255, 255, 0.92),
             inset 0 0 0 1px rgba(29, 155, 240, 0.10);
         }
         50% {
-          transform: scale(1.002, 1.012);
+          transform: scale(1.001, 1.006);
           opacity: 0.99;
           box-shadow:
-            0 -16px 38px rgba(29, 155, 240, 0.20),
+            0 -9px 24px rgba(29, 155, 240, 0.14),
             inset 0 1px 0 rgba(255, 255, 255, 0.96),
             inset 0 0 0 1px rgba(29, 155, 240, 0.14);
         }
@@ -5066,8 +5329,8 @@
           box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.62);
         }
         50% {
-          transform: scale(1.004, 1.016);
-          opacity: 0.96;
+          transform: scale(1.002, 1.008);
+          opacity: 0.92;
           box-shadow:
             inset 0 0 0 1px rgba(255, 255, 255, 0.72),
             0 0 0 3px rgba(29, 155, 240, 0.08);
@@ -5158,7 +5421,7 @@
           width: 100vw;
           top: auto;
           bottom: 0;
-          height: 132px;
+          height: 92px;
         }
         #${DROP_HINT_ID}[data-surface="page-dock"] .__xposter_drop_frame {
           grid-template-columns: 30px minmax(0, 1fr);

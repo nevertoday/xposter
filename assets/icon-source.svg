@@ -1,20 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="xPoster app icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="xPoster Markdown publisher app icon">
   <defs>
-    <linearGradient id="xposter-accent" x1="80" y1="86" x2="112" y2="112" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#1D9BF0"/>
-      <stop offset=".58" stop-color="#35D0A2"/>
-      <stop offset="1" stop-color="#FFD166"/>
+    <linearGradient id="xposter-paper" x1="36" y1="20" x2="92" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFDF6"/>
+      <stop offset="1" stop-color="#E9E2D4"/>
     </linearGradient>
+    <linearGradient id="xposter-signal" x1="65" y1="75" x2="100" y2="106" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1D9BF0"/>
+      <stop offset="1" stop-color="#00BA7C"/>
+    </linearGradient>
+    <filter id="xposter-shadow" x="14" y="13" width="104" height="112" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="8" stdDeviation="5" flood-color="#0F1419" flood-opacity=".22"/>
+    </filter>
   </defs>
 
-  <rect x="0" y="0" width="128" height="128" rx="30" fill="#0F1419"/>
-  <rect x="9" y="9" width="110" height="110" rx="24" fill="none" stroke="#FFFFFF" stroke-opacity=".10" stroke-width="2"/>
+  <rect x="0" y="0" width="128" height="128" rx="28" fill="#111820"/>
+  <rect x="8" y="8" width="112" height="112" rx="23" fill="none" stroke="#FFFFFF" stroke-opacity=".12" stroke-width="2"/>
 
-  <path d="M27 29h19l57 70H84z" fill="#F7F9F9"/>
-  <path d="M84 29h18L45 99H27z" fill="#F7F9F9"/>
-  <path d="M33 29h9l56 70h-9z" fill="#0F1419" fill-opacity=".18"/>
-  <path d="M102 82v17H85z" fill="#0F1419" fill-opacity=".20"/>
+  <g filter="url(#xposter-shadow)">
+    <path d="M34 18h45l23 23v71a7 7 0 0 1-7 7H34a7 7 0 0 1-7-7V25a7 7 0 0 1 7-7Z" fill="url(#xposter-paper)"/>
+    <path d="M79 18v17a6 6 0 0 0 6 6h17Z" fill="#D8CEBC"/>
+    <path d="M79 18v17a6 6 0 0 0 6 6h17" fill="none" stroke="#BEB4A4" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M43 45h34M43 58h38M43 71h26" fill="none" stroke="#4D5A63" stroke-linecap="round" stroke-width="6"/>
+    <path d="M43 89h17" fill="none" stroke="#8B7F6D" stroke-linecap="round" stroke-width="5"/>
+  </g>
 
-  <path d="M84 91h38v13H84z" fill="url(#xposter-accent)"/>
-  <path d="M109 78h13v38h-13z" fill="url(#xposter-accent)"/>
+  <rect x="64" y="76" width="39" height="29" rx="14.5" fill="url(#xposter-signal)"/>
+  <path d="M75 90h17M86 83l8 7-8 7" fill="none" stroke="#F7F9F9" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"/>
 </svg>

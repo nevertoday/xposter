@@ -5896,6 +5896,15 @@
     updateProgressiveSections();
   }
 
+  function shouldPollPageState() {
+    return document.visibilityState !== "hidden";
+  }
+
+  function pollPageState() {
+    if (!shouldPollPageState()) return;
+    void refreshPageState().catch(() => {});
+  }
+
   function setPageState(text, tone, action = "") {
     setLocalizedTextIfChanged(pageStateLabel, text);
     setDatasetValueIfChanged(els.pageState, "xposterSourceText", text);
@@ -8199,6 +8208,7 @@
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushDraftSave();
+    else pollPageState();
   });
   window.addEventListener("pagehide", flushDraftSave);
   els.importDraft.addEventListener("click", runImportButtonAction);
@@ -8350,5 +8360,5 @@
   runWhenIdle(() => {
     void refreshPageState();
   }, STARTUP_PAGE_STATE_TIMEOUT_MS);
-  window.setInterval(refreshPageState, 2500);
+  window.setInterval(pollPageState, 2500);
 })();

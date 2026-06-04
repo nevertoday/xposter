@@ -233,6 +233,8 @@ const articleExportContainerHelperStart = contentScriptText.indexOf("  function 
 const articleExportContainerHelperEnd = contentScriptText.indexOf("  function articleDockInlineEnd");
 const articleExportTitleHelperStart = contentScriptText.indexOf("  function detectArticleExportTitleNode");
 const articleExportTitleHelperEnd = contentScriptText.indexOf("  function detectArticleExportTitle", articleExportTitleHelperStart + 1);
+const editorTopActionHelperStart = contentScriptText.indexOf("  function findEditorTopActionButton");
+const editorTopActionHelperEnd = contentScriptText.indexOf("  function findImportButtonAdjacentAnchor");
 const statusSandbox = {
   document: { body: {}, documentElement: {} },
   getComputedStyle: () => ({ backgroundColor: "rgb(18, 26, 34)" }),
@@ -248,6 +250,7 @@ const mediaSandbox = {
 const mainMediaSandbox = {};
 const mainMarkerSandbox = {};
 const originalImporterSandbox = {};
+const editorTopActionSandbox = {};
 
 assert.ok(statusHelperStart >= 0 && statusHelperEnd > statusHelperStart, "status helper functions should be present");
 assert.ok(
@@ -279,6 +282,10 @@ assert.ok(
     articleExportTitleHelperStart >= 0 &&
     articleExportTitleHelperEnd > articleExportTitleHelperStart,
   "article export route helpers should be present"
+);
+assert.ok(
+  editorTopActionHelperStart >= 0 && editorTopActionHelperEnd > editorTopActionHelperStart,
+  "editor import action button helpers should be present"
 );
 vm.runInNewContext(
   `const state = { language: "zh" };
@@ -356,8 +363,73 @@ vm.runInNewContext(
    this.afterCleanup = detectOriginalImporterResidue();
    this.remainingLegacy = legacyNodes.filter((node) => !node.removed).map((node) => node.id);
    this.xposterStillPresent = !xposterNode.removed;
-   this.bodyClasses = document.body.classList.values();`,
+  this.bodyClasses = document.body.classList.values();`,
   originalImporterSandbox
+);
+vm.runInNewContext(
+  `const IMPORT_BUTTON_ID = "__xposter_import_button__";
+   const IMPORT_BUTTON_WRAP_ID = IMPORT_BUTTON_ID + "_wrap";
+   const window = { innerWidth: 1280 };
+   let activeButtons = [];
+   function normalizeText(value) {
+     return String(value || "").replace(/\\s+/g, " ").trim();
+   }
+   function isElementVisible(element) {
+     const rect = element?.getBoundingClientRect?.() || {};
+     return !element?.hidden && rect.width >= 4 && rect.height >= 4;
+   }
+   function makeButton({
+     id = "",
+     text = "",
+     aria = "",
+     title = "",
+     rect = { top: 34, right: 1180, width: 92, height: 36 },
+     background = "rgba(0, 0, 0, 0)",
+     color = "rgb(15, 20, 25)"
+   } = {}) {
+     return {
+       id,
+       textContent: text,
+       _style: { backgroundColor: background, color },
+       getAttribute(name) {
+         if (name === "aria-label") return aria;
+         if (name === "title") return title;
+         return "";
+       },
+       closest() { return null; },
+       getBoundingClientRect() { return rect; }
+     };
+   }
+   const root = {
+     hidden: false,
+     querySelectorAll() { return activeButtons; },
+     getBoundingClientRect() { return { top: 0, right: 1280, width: 1280, height: 120 }; }
+   };
+   const document = {
+     getElementById() { return null; },
+     querySelector(selector) {
+       return selector === "header[role='banner']" || selector === "header" || selector === "[role='main']" ? root : null;
+     }
+   };
+   function getComputedStyle(element) {
+     return element?._style || { backgroundColor: "rgba(0, 0, 0, 0)", color: "rgb(15, 20, 25)" };
+   }
+   ${contentScriptText.slice(editorTopActionHelperStart, editorTopActionHelperEnd)}
+   const ambiguous = makeButton({ id: "tools", text: "Tools" });
+   const publish = makeButton({ id: "publish", aria: "Publish article", rect: { top: 34, right: 1120, width: 132, height: 36 } });
+   const primary = makeButton({ id: "primary", rect: { top: 34, right: 1180, width: 92, height: 36 }, background: "rgb(29, 155, 240)", color: "rgb(255, 255, 255)" });
+   activeButtons = [ambiguous];
+   const ambiguousOnly = findEditorTopActionButton();
+   activeButtons = [ambiguous, publish];
+   const preferred = findEditorTopActionButton();
+   activeButtons = [primary];
+   const primaryOnly = findEditorTopActionButton();
+   this.editorTopActionResults = {
+     ambiguousOnlyId: ambiguousOnly?.id || null,
+     preferredId: preferred?.id || null,
+     primaryOnlyId: primaryOnly?.id || null
+   };`,
+  editorTopActionSandbox
 );
 const articleRouteSandbox = { URL };
 vm.runInNewContext(
@@ -891,11 +963,20 @@ assert.ok(
   includesAll(contentScriptText, [
     "function syncImportButton",
     "function findImportButtonAnchor",
+    "function findEditorImportButtonActionAnchor",
+    "function findEditorTopActionButton",
+    "function isPrimaryActionLike",
+    "function findImportButtonAdjacentAnchor",
+    "function importButtonAdjacentPosition",
+    "function isEmptyStateCreateButton",
     "function confirmArticleImportOverwrite",
     "function showImportOverwriteConfirm",
     "function positionImportConfirmPanel",
     "function articleDraftHasMeaningfulContent",
     "function syncImportButtonCopy",
+    "function shouldScheduleImportButtonSync",
+    "new MutationObserver((mutations) => {",
+    "if (shouldScheduleImportButtonSync(mutations)) mount();",
     "setDatasetValueIfChanged(wrap, \"route\", isEditorRoute() ? \"editor\" : \"list\")",
     "button.addEventListener(\"click\", () => chooseMarkdownFile(\"button\"));",
     "const IMPORT_CONFIRM_ID = \"__xposter_import_confirm__\";",
@@ -903,17 +984,48 @@ assert.ok(
     "Continue import",
     "\"Import Markdown\": \"导入 Markdown\"",
     "\"Import Markdown with xPoster\": \"用 xPoster 导入 Markdown\"",
+    "placement: \"editor-action\"",
+    "\"publish article\"",
+    "data-placement=\"button-adjacent\"",
+    "--__xposter-import-anchor-left",
+    "--__xposter-import-anchor-top",
+    "const IMPORT_BUTTON_ADJACENT_HEIGHT_PX = 52;",
+    "min-height: 52px;",
+    "background: rgba(29, 155, 240, 0.10);",
+    "color: #0f6cbf;",
     "__xposter_import_fallback",
     "#${IMPORT_CONFIRM_ID}",
+    "window.addEventListener(\"resize\", mount, { passive: true });",
+    "window.addEventListener(\"scroll\", () => {",
+    "const confirmPanel = document.getElementById(IMPORT_CONFIRM_ID);",
+    "positionImportConfirmPanel(confirmPanel);",
+    "document.getElementById(IMPORT_BUTTON_WRAP_ID)?.dataset.placement === \"button-adjacent\"",
+    "if (!preferred && !primaryScore) continue;",
     "@media (max-width: 520px)",
     "input.accept = \".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain\";"
   ]) &&
     excludesAll(contentScriptText, [
       "if (!isArticleRoute() || isEditorRoute())",
       "if (document.getElementById(IMPORT_BUTTON_ID)) return;",
+      "new MutationObserver(mount).observe(document.body",
       "window.confirm("
     ]),
-  "X Articles import button should be a localized top action on list and editor routes, with fallback placement and overwrite confirmation"
+  "X Articles import button should sit beside the empty-state Write action when available, with localized copy, fallback placement, and overwrite confirmation"
+);
+assert.equal(
+  editorTopActionSandbox.editorTopActionResults.ambiguousOnlyId,
+  null,
+  "editor import button anchor should ignore arbitrary top-right controls"
+);
+assert.equal(
+  editorTopActionSandbox.editorTopActionResults.preferredId,
+  "publish",
+  "editor import button anchor should accept preferred publish labels"
+);
+assert.equal(
+  editorTopActionSandbox.editorTopActionResults.primaryOnlyId,
+  "primary",
+  "editor import button anchor should accept primary action styling"
 );
 assert.ok(
   includesAll(sidepanelText, [
@@ -952,8 +1064,8 @@ assert.ok(
     "function pageDropDockSurfaceRect",
     "function articleBodyDropDockRect",
     "width: window.innerWidth",
-    "height = Math.min(168, Math.max(128, Math.round(window.innerHeight * 0.18)))",
-    "height = Math.min(96",
+    "height = Math.min(112, Math.max(84, Math.round(window.innerHeight * 0.11)))",
+    "height = Math.min(76, Math.max(54, Math.round(window.innerHeight * 0.07)))",
     "function dropHintSurfaceKind",
     'if (intent === "article") return "page-dock";',
     'if (intent === "folder") return "page-dock";',
@@ -966,10 +1078,10 @@ assert.ok(
     "findDirectoryTransferItem(dataTransfer) && isEditorRoute() && findEditor()",
     "--xposter-drop-signal: #1d9bf0",
     "--xposter-drop-signal-text: #0f6cbf",
-    "height: var(--xposter-drop-surface-height, 132px)",
-    "border: 1px solid rgba(29, 155, 240, 0.42)",
-    "border: 1.5px dashed rgba(29, 155, 240, 0.48)",
-    "linear-gradient(180deg, rgba(238, 249, 255, 0.98), rgba(217, 240, 255, 0.97))",
+    "height: var(--xposter-drop-surface-height, 96px)",
+    "border: 1px solid rgba(29, 155, 240, 0.32)",
+    "border: 1px dashed rgba(29, 155, 240, 0.40)",
+    "linear-gradient(180deg, rgba(248, 252, 255, 0.96), rgba(232, 246, 255, 0.93))",
     '[data-mode="markdown"][data-surface="page-dock"]::before',
     '[data-mode="folder"][data-surface="page-dock"]::before',
     '[data-mode="folder"][data-surface="page-dock"]::after',
@@ -987,13 +1099,13 @@ assert.ok(
     "will-change: transform, box-shadow, opacity",
     "__xposter_drop_dock_breathe 2.2s ease-in-out infinite",
     "__xposter_drop_dock_receive 2.2s ease-in-out infinite",
-    "transform: scale(1.002, 1.012)",
-    "transform: scale(1.004, 1.016)",
+    "transform: scale(1.001, 1.006)",
+    "transform: scale(1.002, 1.008)",
     "transform: translateY(-1px) scale(1.08)",
     "color: #063b63;",
     ".__xposter_drop_status",
     "function dropHintStatusLabel",
-    "grid-template-columns: 34px minmax(0, 1fr) auto;",
+    "grid-template-columns: 30px minmax(0, 1fr) auto;",
     '[data-mode="markdown"][data-surface="page-dock"] strong',
     '[data-mode="markdown"][data-surface="page-dock"] p',
     "__xposter_drop_mark_hint",
@@ -1002,6 +1114,15 @@ assert.ok(
     "Write to this X Article",
     "Release in the bottom bar to write this Markdown here.",
     "xPoster page drop target",
+    "function requestContentFrame",
+    "function scheduleDropHint",
+    "scheduleDropHint(event.dataTransfer, intent, dropHintMode(event.dataTransfer, intent))",
+    "showDropHint(state.dropHintDataTransfer, null, state.dropHintIntent, state.dropHintMode)",
+    "function cancelScheduledDropHint",
+    "cancelScheduledDropHint();",
+    "function scheduleVisibleDropHintSurfaceUpdate",
+    "window.addEventListener(\"resize\", scheduleVisibleDropHintSurfaceUpdate",
+    "window.addEventListener(\"scroll\", scheduleVisibleDropHintSurfaceUpdate",
     "function setDropHintProcessing",
     "setDatasetValueIfChanged(hint, \"intent\", intent)",
     "setDatasetValueIfChanged(hint, \"state\", \"ready\")",
@@ -1037,9 +1158,10 @@ assert.ok(
       "hint.style.setProperty(\"--xposter-drop-surface-left\"",
       "const title = hint.querySelector(\"strong\");",
       "const detail = hint.querySelector(\"p\");",
-      "const status = hint.querySelector(\".__xposter_drop_status\");"
+      "const status = hint.querySelector(\".__xposter_drop_status\");",
+      "window.addEventListener(\"scroll\", updateVisibleDropHintSurface"
     ]),
-  "X page drag feedback should use a taller light-blue bottom dock with blue outline, explicit folder drop copy, and reduced motion coverage"
+  "X page drag feedback should use a compact light-blue bottom dock with blue outline, explicit folder drop copy, and reduced motion coverage"
 );
 assert.ok(
   contentScriptText.includes("if (!event?.altKey) return false;") &&
@@ -1107,6 +1229,11 @@ assert.ok(
     'const ARTICLE_EXPORT_SETTINGS_STORAGE_KEY = "xposter_article_export_settings"',
     'enabled: settings.enabled !== false',
     'function installArticleExportButton',
+    'function scheduleArticleExportSyncFromMutations',
+    'function shouldScheduleArticleExportSync',
+    'function mutationTouchesArticleExportSignal',
+    'function nodeHasArticleExportSignal',
+    'new MutationObserver(scheduleArticleExportSyncFromMutations)',
     'function extractReadableXArticle',
     'function articleExportPathInfo',
     'function articleExportAnchorSelector',
@@ -1196,6 +1323,7 @@ assert.ok(
       'backdrop-filter: blur',
       'button[data-active="true"]',
       'button.textContent = articleExportShortLabel',
+      'new MutationObserver(() => scheduleArticleExportSync())',
       '[data-xposter-article-export-host="true"]',
       'root.dataset.articleFileName = article.fileName || articleFileName(article.title)',
       'root.dataset.articleCharacterCount = String(article.characterCount || 0)',
@@ -2386,6 +2514,11 @@ assert.ok(
       'if (panel.classList.contains("active")) translateDynamicDom(panel, { syncEnvironment: false });',
       "function removeStylePropertyIfChanged(node, property)",
       "function runAfterFirstPaint(callback)",
+      "function shouldPollPageState",
+      "function pollPageState",
+      "if (!shouldPollPageState()) return;",
+      "else pollPageState();",
+      "window.setInterval(pollPageState, 2500);",
       "function activeWorkspaceTarget(target = \"draft\")",
       "function workspaceTargetIndex(target)",
       "function syncWorkspaceTabs(target)",
@@ -2477,6 +2610,7 @@ assert.ok(
       'translateDynamicDom(document.querySelector(".topbar") || document.body)',
       'translateDynamicDom(document.querySelector(".tabs") || document.body)',
       'document.querySelectorAll(".panel.active").forEach((panel) => translateDynamicDom(panel))',
+      "window.setInterval(refreshPageState, 2500)",
       ".forEach((panel) => translateDynamicDom(panel));",
       'els.draftEditorToolbar?.querySelectorAll("[data-editor-command]")',
       'els.recordEditToolbar?.querySelectorAll("[data-editor-command]")',
