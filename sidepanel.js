@@ -14,6 +14,7 @@
     STORAGE_IMPORT_OPTIONS,
     STORAGE_ARTICLE_EXPORT_SETTINGS,
     STORAGE_SUCCESS_FEEDBACK,
+    STORAGE_AI_COVER_SETTINGS,
     STORAGE_RECORD_HISTORY,
     STORAGE_DRAFT_QUEUE,
     STORAGE_TARGET_TAB,
@@ -48,6 +49,13 @@
     SUCCESS_SOUND_PRESETS,
     SUCCESS_SOUND_STYLES,
     SUCCESS_CELEBRATION_COLORS,
+    AI_COVER_DEFAULT_BASE_URL,
+    AI_COVER_DEFAULT_MODEL,
+    AI_COVER_REQUEST_SIZE,
+    AI_COVER_OUTPUT_WIDTH,
+    AI_COVER_OUTPUT_HEIGHT,
+    AI_COVER_MAX_ROUNDS,
+    AI_COVER_MAX_IMAGES_PER_ROUND,
     CONTENT_VERSION_UNKNOWN,
     EXTENSION_PATH
   } = sidepanelConfig;
@@ -55,6 +63,25 @@
     typeof chrome !== "undefined" && chrome.runtime?.getManifest
       ? chrome.runtime.getManifest().version
       : "dev";
+  const AI_COVER_MAX_CANDIDATES = 12;
+  const AI_COVER_IMAGE_FETCH_TIMEOUT_MS = 30000;
+  const AI_COVER_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
+  const AI_COVER_GEMINI_DEFAULT_MODEL = "gemini-2.5-flash-image";
+  const AI_COVER_API_PROVIDER_PRESETS = [
+    { id: "openai", label: "OpenAI", baseUrl: AI_COVER_DEFAULT_BASE_URL, defaultModel: AI_COVER_DEFAULT_MODEL },
+    { id: "gemini", label: "Gemini", baseUrl: AI_COVER_GEMINI_BASE_URL, defaultModel: AI_COVER_GEMINI_DEFAULT_MODEL },
+    { id: "custom", label: "OpenAI-compatible API", baseUrl: "", defaultModel: "" }
+  ];
+  const SUPPORT_METHOD_COPY = {
+    coffee: {
+      title: "Buy Me a Coffee",
+      subtitle: "Open the Buy Me a Coffee code only for this support method."
+    },
+    wechat: {
+      title: "WeChat",
+      subtitle: "Open the WeChat appreciation code only for this support method."
+    }
+  };
   const workspaceTabs = [...document.querySelectorAll(".tab")];
   const workspacePanels = [...document.querySelectorAll(".panel")];
   const workspaceTopbar = document.querySelector(".topbar");
@@ -75,6 +102,8 @@
   const draftDropStatusNodes = collectDraftDropStatusNodes();
   const planBreakdownDetail = els.planBreakdown?.querySelector("p") || null;
   const pageStateLabel = els.pageState?.querySelector("span") || els.pageState || null;
+  const publishNextTitle = els.publishRail?.querySelector("[data-publish-next-title]") || null;
+  const publishNextDetail = els.publishRail?.querySelector("[data-publish-next-detail]") || null;
   const conversionMapSection = els.conversionMapList?.closest("section") || null;
   const importLedgerSection = els.importLedgerList?.closest("section") || null;
   const reviewSection = els.reviewList?.closest("section") || null;
@@ -113,6 +142,7 @@
   let draftSaveTimer = null;
   let draftAnalyzeTimer = null;
   let draftSyntaxIdleHandle = null;
+  let draftDetailRenderIdleHandle = null;
   let draftQueueMediaIdleHandle = null;
   let recordSearchTimer = null;
   let recordHistoryRestored = false;
@@ -130,9 +160,21 @@
   let writeButtonRevealTimer = null;
   let importCancelRequested = false;
   let uploadRetryRequested = false;
-  let importOptions = { setTitle: true, setCover: true, smartPunctuation: false };
+  let importOptions = { setTitle: true, setCover: false, allowGraphqlMetadata: false, smartPunctuation: false };
   let successFeedbackOptions = { confetti: true, sound: true, soundStyle: "soft" };
   let articleExportOptions = { enabled: true, mode: "copy" };
+  let aiCoverSettings = shared.normalizeAiCoverSettings({
+    model: AI_COVER_DEFAULT_MODEL,
+    requestSize: AI_COVER_REQUEST_SIZE
+  });
+  let aiCoverCandidates = [];
+  let aiCoverGenerationAbort = null;
+  let aiCoverDialogOpener = null;
+  let aiCoverReturnToGeneratorAfterKey = false;
+  let supportDialogOpener = null;
+  let editingAiCoverPromptProfileId = "";
+  let aiCoverCustomBaseUrlDraft = "";
+  const aiCoverMotionTimers = new WeakMap();
   let successAudioContext = null;
   let lastSuccessFeedbackKey = "";
   let draftEditorMode = "edit";
@@ -288,9 +330,11 @@
   }
 
   function normalizeImportOptions(options = {}) {
+    const allowGraphqlMetadata = options.allowGraphqlMetadata === true;
     return {
       setTitle: options.setTitle !== false,
-      setCover: options.setCover !== false,
+      setCover: allowGraphqlMetadata && options.setCover === true,
+      allowGraphqlMetadata,
       smartPunctuation: options.smartPunctuation === true,
       ...titleCandidateOptions(options)
     };
@@ -369,6 +413,85 @@
       const tokenPattern = new RegExp(`<xposter-code-block>\\s*${block.token}\\s*</xposter-code-block>|<p>\\s*${block.token}\\s*</p>|${block.token}`, "g");
       return output.replace(tokenPattern, block.html);
     }, String(html || ""));
+  }
+
+  function protectReadPreviewImages(markdown = "") {
+    const images = [];
+    const source = String(markdown || "");
+    let protectedMarkdown = "";
+    let cursor = 0;
+
+    while (cursor < source.length) {
+      const start = source.indexOf("![", cursor);
+      if (start < 0) {
+        protectedMarkdown += source.slice(cursor);
+        break;
+      }
+
+      protectedMarkdown += source.slice(cursor, start);
+      const altEnd = findReadPreviewClosingBracket(source, start + 2);
+      if (altEnd < 0 || source[altEnd + 1] !== "(") {
+        protectedMarkdown += source.slice(start, start + 2);
+        cursor = start + 2;
+        continue;
+      }
+
+      const sourceStart = altEnd + 2;
+      const sourceEnd = findReadPreviewClosingParen(source, sourceStart);
+      if (sourceEnd < 0) {
+        protectedMarkdown += source.slice(start, altEnd + 1);
+        cursor = altEnd + 1;
+        continue;
+      }
+
+      const token = `XPOSTERREADIMAGE${images.length}TOKEN`;
+      const alt = source.slice(start + 2, altEnd);
+      const imageSource = source.slice(sourceStart, sourceEnd).trim();
+      const safe = shared.escapeHtml;
+      images.push({
+        token,
+        html: imageSource
+          ? `<img src="${safe(imageSource)}" alt="${safe(alt)}">`
+          : `<img alt="${safe(alt)}">`
+      });
+      protectedMarkdown += token;
+      cursor = sourceEnd + 1;
+    }
+
+    return { protectedMarkdown, images };
+  }
+
+  function restoreReadPreviewImages(html = "", images = []) {
+    return images.reduce((output, image) => output.replace(new RegExp(image.token, "g"), image.html), String(html || ""));
+  }
+
+  function findReadPreviewClosingBracket(markdown, start) {
+    for (let index = start; index < markdown.length; index += 1) {
+      if (markdown[index] === "]" && !isReadPreviewEscaped(markdown, index)) return index;
+    }
+    return -1;
+  }
+
+  function findReadPreviewClosingParen(markdown, start) {
+    let depth = 0;
+    for (let index = start; index < markdown.length; index += 1) {
+      const char = markdown[index];
+      if (isReadPreviewEscaped(markdown, index)) continue;
+      if (char === "(") {
+        depth += 1;
+        continue;
+      }
+      if (char !== ")") continue;
+      if (depth === 0) return index;
+      depth -= 1;
+    }
+    return -1;
+  }
+
+  function isReadPreviewEscaped(text, index) {
+    let count = 0;
+    for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) count += 1;
+    return count % 2 === 1;
   }
 
   function isWhitespacePreviewNode(node) {
@@ -480,8 +603,59 @@
         node.setAttribute("decoding", "async");
       }
     });
+    wrapPreviewImages(template.content);
     normalizePreviewLists(template.content);
     return template.innerHTML;
+  }
+
+  function wrapPreviewImages(root) {
+    root.querySelectorAll("img").forEach((img) => {
+      if (img.closest(".draft-preview-image")) return;
+      const source = img.getAttribute("src") || "";
+      const alt = img.getAttribute("alt") || "";
+      const figure = document.createElement("figure");
+      figure.className = "draft-preview-image";
+      figure.dataset.previewState = source ? "loading" : "error";
+      if (source) figure.dataset.previewSource = source;
+      if (alt) figure.dataset.previewAlt = alt;
+
+      const fallback = document.createElement("figcaption");
+      fallback.className = "draft-preview-image-fallback";
+      fallback.setAttribute("aria-live", "polite");
+
+      const mark = document.createElement("span");
+      mark.className = "draft-preview-image-mark";
+      mark.setAttribute("aria-hidden", "true");
+      mark.textContent = "IMG";
+
+      const title = document.createElement("strong");
+      title.dataset.i18n = "Image preview unavailable";
+      title.textContent = localizeText("Image preview unavailable");
+
+      const detail = document.createElement("span");
+      detail.className = "draft-preview-image-source";
+      detail.textContent = source || alt || localizeText("Image source is missing.");
+
+      fallback.append(mark, title, detail);
+      img.replaceWith(figure);
+      figure.append(img, fallback);
+    });
+  }
+
+  function markPreviewImageUnavailable(img) {
+    const figure = img?.closest?.(".draft-preview-image");
+    if (!figure) return;
+    setDatasetValueIfChanged(figure, "previewState", "error");
+    const detail = figure.querySelector(".draft-preview-image-source");
+    const source = img.currentSrc || img.getAttribute("src") || figure.dataset.previewSource || "";
+    const alt = img.getAttribute("alt") || figure.dataset.previewAlt || "";
+    setTextContentIfChanged(detail, source || alt || localizeText("Image source is missing."));
+  }
+
+  function markPreviewImageLoaded(img) {
+    const figure = img?.closest?.(".draft-preview-image");
+    if (!figure) return;
+    setDatasetValueIfChanged(figure, "previewState", "loaded");
   }
 
   function markdownSegmentCounts(text, fallback = shared.segmentCounts([])) {
@@ -495,6 +669,7 @@
 
   function editorStatsText(text, counts = shared.segmentCounts([])) {
     const length = String(text || "").length;
+    if (!length) return localizeText("Draft empty");
     const parts = [];
     if (length) parts.push(formatCompactUnit(length, "char", "chars", "字符"));
     if (counts.image) parts.push(formatCompactUnit(counts.image, "image", "images", "图"));
@@ -678,6 +853,13 @@
     draftSyntaxIdleHandle = null;
   }
 
+  function cancelDeferredDraftDetailRender() {
+    if (!draftDetailRenderIdleHandle) return;
+    if (typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(draftDetailRenderIdleHandle);
+    else window.clearTimeout(draftDetailRenderIdleHandle);
+    draftDetailRenderIdleHandle = null;
+  }
+
   function renderDraftSyntaxHighlight(text = draftText()) {
     if (!els.draftSyntaxHighlight) return;
     cancelDeferredDraftSyntaxHighlight();
@@ -754,6 +936,7 @@
     const isEdit = draftEditorMode === "edit";
     const isPreview = !isEdit;
     const hasQueue = queueModeActive();
+    setDatasetValueIfChanged(els.draftPanel, "editorMode", draftEditorMode);
     setDatasetValueIfChanged(els.draftEditorShell, "mode", draftEditorMode);
     syncVisibilityState(els.draftEditorInputWrap, isPreview || hasQueue);
     if (els.markdown) {
@@ -803,10 +986,15 @@
   function markdownPreviewHtml(markdown = "") {
     const safe = shared.escapeHtml;
     const renderer = miniGfm();
-    const { protectedMarkdown, codeBlocks } = protectReadPreviewCodeBlocks(markdown);
+    const visibleMarkdown = shared.stripMarkdownFrontmatter(markdown);
+    if (!visibleMarkdown.trim() && String(markdown || "").trim()) {
+      return `<p class="empty">${safe(localizeText("Only frontmatter metadata is present. It will not be written as article body."))}</p>`;
+    }
+    const { protectedMarkdown: codeProtectedMarkdown, codeBlocks } = protectReadPreviewCodeBlocks(visibleMarkdown);
+    const { protectedMarkdown, images } = protectReadPreviewImages(codeProtectedMarkdown);
     return renderer
-      ? sanitizePreviewHtml(restoreReadPreviewCodeBlocks(renderer.parse(protectedMarkdown), codeBlocks))
-      : `<pre class="draft-read-fallback">${safe(markdown)}</pre>`;
+      ? sanitizePreviewHtml(restoreReadPreviewCodeBlocks(restoreReadPreviewImages(renderer.parse(protectedMarkdown), images), codeBlocks))
+      : `<pre class="draft-read-fallback">${safe(visibleMarkdown)}</pre>`;
   }
 
   function emptyMarkdownPreviewHtml() {
@@ -823,19 +1011,20 @@
     return normalizeImportOptions(importOptions);
   }
 
-  function writeOptionsPayload({ forceNewArticle = false, sourceFileName = "" } = {}) {
+  function writeOptionsPayload({ forceNewArticle = false, sourceFileName = "", celebrateOnComplete = true } = {}) {
     return {
       ...normalizeImportOptions({
         ...importOptions,
         sourceFileName
       }),
-      forceNewArticle: Boolean(forceNewArticle)
+      forceNewArticle: Boolean(forceNewArticle),
+      celebrateOnComplete: celebrateOnComplete !== false
     };
   }
 
   function syncImportOptionsControls() {
     setBooleanPropertyIfChanged(els.importTitleOption, "checked", importOptions.setTitle !== false);
-    setBooleanPropertyIfChanged(els.importCoverOption, "checked", importOptions.setCover !== false);
+    setBooleanPropertyIfChanged(els.importCoverOption, "checked", importOptions.setCover === true);
     setBooleanPropertyIfChanged(els.smartPunctuationOption, "checked", importOptions.smartPunctuation === true);
   }
 
@@ -897,6 +1086,821 @@
       return;
     }
     applyArticleExportOptions(articleExportOptions);
+  }
+
+  function normalizeAiCoverSettingsForStorage(options = aiCoverSettings) {
+    return shared.normalizeAiCoverSettings({
+      ...options,
+      model: options.model || AI_COVER_DEFAULT_MODEL,
+      requestSize: options.requestSize || AI_COVER_REQUEST_SIZE
+    });
+  }
+
+  function aiCoverSettingsPayload() {
+    return { ...normalizeAiCoverSettingsForStorage(aiCoverSettings), apiKey: "" };
+  }
+
+  function maskedAiCoverKey(apiKey = "") {
+    const text = String(apiKey || "").trim();
+    if (text.length <= 8) return text ? "sk-..." : "";
+    return `${text.slice(0, 7)}...${text.slice(-4)}`;
+  }
+
+  function aiCoverKeyStatusText(key = {}) {
+    const test = key.lastTest || null;
+    if (!test) return key.enabled ? "Active" : "Stored";
+    const stamp = test.checkedAt ? new Date(test.checkedAt).toLocaleString() : "";
+    const status = !test.ok ? "Test failed" : test.verified === false ? "Stored" : "Test passed";
+    return stamp ? `${status} · ${stamp}` : status;
+  }
+
+  function aiCoverDialogElements() {
+    return [
+      els.aiCoverApiDialog,
+      els.aiCoverPromptProfileDialog,
+      els.aiCoverGeneratorDialog
+    ].filter(Boolean);
+  }
+
+  function updateModalOpenState() {
+    const openDialogs = [els.recordEditSheet, els.supportDialog, ...aiCoverDialogElements()];
+    const open = openDialogs.some((dialog) => dialog && !dialog.hidden);
+    setDatasetValueIfChanged(document.body, "modalOpen", open ? "true" : "false");
+    setDatasetValueIfChanged(document.documentElement, "modalOpen", open ? "true" : "false");
+  }
+
+  function supportMethodCopy(method = "") {
+    return SUPPORT_METHOD_COPY[method] || SUPPORT_METHOD_COPY.wechat;
+  }
+
+  function setSupportDialogOpen(open, method = "wechat") {
+    if (!els.supportDialog) return;
+    setBooleanPropertyIfChanged(els.supportDialog, "hidden", !open);
+    if (open) {
+      const copy = supportMethodCopy(method);
+      supportDialogOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setDatasetValueIfChanged(els.supportDialog, "method", method === "coffee" ? "coffee" : "wechat");
+      setLocalizedTextIfChanged(els.supportDialogTitle, copy.title);
+      setLocalizedTextIfChanged(els.supportDialogSubtitle, copy.subtitle);
+      translateDynamicDom(els.supportDialog);
+      window.setTimeout(() => els.supportClose?.focus?.(), 0);
+    } else if (supportDialogOpener?.isConnected) {
+      window.setTimeout(() => supportDialogOpener?.focus?.(), 0);
+      supportDialogOpener = null;
+    }
+    updateModalOpenState();
+  }
+
+  function setAiCoverDialogOpen(dialog, open) {
+    if (!dialog) return;
+    setBooleanPropertyIfChanged(dialog, "hidden", !open);
+    updateModalOpenState();
+    if (open) {
+      aiCoverDialogOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      translateDynamicDom(dialog);
+      window.setTimeout(() => {
+        const focusTarget =
+          dialog === els.aiCoverGeneratorDialog
+            ? els.aiCoverPromptInput
+            : dialog === els.aiCoverApiDialog
+              ? els.aiCoverApiProvider
+              : dialog.querySelector("input, textarea, select, button:not([disabled])");
+        focusTarget?.focus?.();
+      }, 0);
+    }
+  }
+
+  function abortAiCoverGeneration() {
+    aiCoverGenerationAbort?.abort?.();
+    aiCoverGenerationAbort = null;
+  }
+
+  function closeAiCoverDialogs({ abortGeneration = true, restoreFocus = true } = {}) {
+    if (abortGeneration) abortAiCoverGeneration();
+    aiCoverReturnToGeneratorAfterKey = false;
+    for (const dialog of aiCoverDialogElements()) {
+      setBooleanPropertyIfChanged(dialog, "hidden", true);
+    }
+    updateModalOpenState();
+    if (restoreFocus && aiCoverDialogOpener?.isConnected) {
+      window.setTimeout(() => aiCoverDialogOpener?.focus?.(), 0);
+    }
+    aiCoverDialogOpener = null;
+  }
+
+  function openAiCoverApiDialog(options = {}) {
+    aiCoverReturnToGeneratorAfterKey = Boolean(options?.returnToGenerator);
+    closeAiCoverDialogs({ abortGeneration: false, restoreFocus: false });
+    aiCoverReturnToGeneratorAfterKey = Boolean(options?.returnToGenerator);
+    resetAiCoverKeyTestResult();
+    setAiCoverDialogOpen(els.aiCoverApiDialog, true);
+  }
+
+  function openAiCoverPromptProfileDialog() {
+    closeAiCoverDialogs({ abortGeneration: false, restoreFocus: false });
+    editingAiCoverPromptProfileId = "";
+    resetAiCoverPromptProfileEditor();
+    renderAiCoverPromptProfileList();
+    setAiCoverDialogOpen(els.aiCoverPromptProfileDialog, true);
+  }
+
+  function openAiCoverGeneratorDialog() {
+    closeAiCoverDialogs({ abortGeneration: false, restoreFocus: false });
+    syncAiCoverPromptProfileSelect();
+    renderAiCoverCandidates();
+    updateAiCoverReadiness();
+    setAiCoverDialogOpen(els.aiCoverGeneratorDialog, true);
+  }
+
+  function returnToAiCoverGeneratorFromKeyDialog() {
+    if (!aiCoverReturnToGeneratorAfterKey) return false;
+    aiCoverReturnToGeneratorAfterKey = false;
+    openAiCoverGeneratorDialog();
+    return true;
+  }
+
+  function activeAiCoverPromptProfile(settings = aiCoverSettings) {
+    return shared.activeAiCoverPromptProfile(settings);
+  }
+
+  function aiCoverKeys() {
+    return aiCoverSettings.keys || [];
+  }
+
+  function aiCoverPromptProfiles() {
+    return aiCoverSettings.promptProfiles || [];
+  }
+
+  function aiCoverCountLabel(count, singular, plural = `${singular}s`) {
+    return `${count} ${count === 1 ? singular : plural}`;
+  }
+
+  function aiCoverEmptyHtml(message) {
+    return `<p class="empty">${shared.escapeHtml(localizeText(message))}</p>`;
+  }
+
+  function aiCoverDialogWasClosed(event, dialog) {
+    return event.target === dialog || Boolean(event.target?.closest?.("[data-ai-cover-dialog-close]"));
+  }
+
+  function closeAiCoverDialogOnEscape(event) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    closeAiCoverDialogs();
+  }
+
+  function handleAiCoverPromptProfileAction(event) {
+    const button = event.target?.closest?.("button[data-ai-prompt-action]");
+    if (!button) return;
+    const id = button.dataset.aiPromptId || "";
+    const action = button.dataset.aiPromptAction || "";
+    if (action === "new") {
+      resetAiCoverPromptProfileEditor();
+      setAiCoverStatus("New cover style.", "idle");
+      els.aiCoverPromptProfileName?.focus?.();
+      return;
+    }
+    if (action === "activate") void activateAiCoverPromptProfile(id);
+    if (action === "edit") editAiCoverPromptProfile(id);
+    if (action === "remove") void removeAiCoverPromptProfile(id);
+  }
+
+  function handleAiCoverKeyAction(event) {
+    const button = event.target?.closest?.("button[data-ai-key-action]");
+    if (!button) return;
+    const id = button.dataset.aiKeyId || "";
+    const action = button.dataset.aiKeyAction || "";
+    if (action === "activate") void activateAiCoverKey(id);
+    if (action === "test") void testAiCoverKey(id);
+    if (action === "remove") void removeAiCoverKey(id);
+  }
+
+  function handleAiCoverGeneratorOpenClick(event) {
+    const button = event.target?.closest?.("[data-ai-cover-open-generator]");
+    if (!button) return false;
+    event.preventDefault();
+    openAiCoverGeneratorDialog();
+    return true;
+  }
+
+  function aiCoverProviderPreset(provider = "openai") {
+    const providerId = String(provider || "").trim().toLowerCase();
+    const normalizedProvider = providerId === "smartcoder" ? "custom" : providerId;
+    return (
+      AI_COVER_API_PROVIDER_PRESETS.find((preset) => preset.id === normalizedProvider) ||
+      AI_COVER_API_PROVIDER_PRESETS.find((preset) => preset.id === "custom") ||
+      AI_COVER_API_PROVIDER_PRESETS[0]
+    );
+  }
+
+  function aiCoverProviderLabel(key = {}) {
+    return key.providerName || aiCoverProviderPreset(key.provider).label || "Custom compatible API";
+  }
+
+  function aiCoverProfileName(profile = null) {
+    return localizeText(profile?.name || "Default style");
+  }
+
+  function aiCoverKnownDefaultModels() {
+    return AI_COVER_API_PROVIDER_PRESETS
+      .map((preset) => preset.defaultModel)
+      .filter(Boolean);
+  }
+
+  function aiCoverModelForProvider(model = "", provider = "") {
+    const preset = aiCoverProviderPreset(provider);
+    const requestedModel = String(model || "").trim();
+    if (!preset.defaultModel) return requestedModel || AI_COVER_DEFAULT_MODEL;
+    if (!requestedModel) return preset.defaultModel;
+    if (preset.id !== "openai" && requestedModel === AI_COVER_DEFAULT_MODEL) return preset.defaultModel;
+    return requestedModel;
+  }
+
+  function isAiCoverLoopbackHost(hostname = "") {
+    const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+    if (host === "localhost" || host.endsWith(".localhost")) return true;
+    if (host === "::1") return true;
+    return /^127(?:\.\d{1,3}){3}$/.test(host);
+  }
+
+  function isAllowedAiCoverApiUrl(value = "") {
+    try {
+      const url = new URL(value);
+      if (url.protocol === "https:") return true;
+      return url.protocol === "http:" && isAiCoverLoopbackHost(url.hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  function normalizeAiCoverControlBaseUrl(value = "") {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      const url = new URL(raw);
+      if (!isAllowedAiCoverApiUrl(url.toString())) return "";
+      // Forgive pasted endpoint paths ("/v1/images/generations") and bare hosts
+      // ("http://127.0.0.1:8317") so the saved base URL is the /v1 root either way.
+      let pathname = url.pathname
+        .replace(/\/(?:images\/generations|chat\/completions|completions|embeddings|models)\/?$/i, "")
+        .replace(/\/+$/g, "");
+      if (!pathname) pathname = "/v1";
+      url.pathname = pathname;
+      url.search = "";
+      url.hash = "";
+      return url.toString().replace(/\/$/g, "");
+    } catch {
+      return "";
+    }
+  }
+
+  function aiCoverProviderFromControls() {
+    const preset = aiCoverProviderPreset(els.aiCoverApiProvider?.value || "openai");
+    const customBaseUrl = normalizeAiCoverControlBaseUrl(els.aiCoverApiBaseUrl?.value || "");
+    return {
+      id: preset.id,
+      label: preset.label,
+      baseUrl: preset.baseUrl || customBaseUrl
+    };
+  }
+
+  function findAiCoverPromptProfile(id) {
+    return aiCoverPromptProfiles().find((profile) => profile.id === id) || null;
+  }
+
+  function updateAiCoverKeySummary() {
+    const keys = aiCoverKeys();
+    if (!keys.length) {
+      setLocalizedTextIfChanged(els.aiCoverKeySummary, "No API keys added yet.");
+      return;
+    }
+    const active = keys.find((key) => key.enabled) || keys[0];
+    const label = [
+      aiCoverProviderLabel(active),
+      active.name || "API key",
+      maskedAiCoverKey(active.apiKey),
+      aiCoverCountLabel(keys.length, "key")
+    ].join(" · ");
+    setTextContentIfChanged(els.aiCoverKeySummary, label);
+  }
+
+  function updateAiCoverPromptProfileSummary() {
+    const profiles = aiCoverPromptProfiles();
+    const active = activeAiCoverPromptProfile();
+    if (!active) {
+      setLocalizedTextIfChanged(els.aiCoverPromptProfileSummary, "Default style");
+      return;
+    }
+    const label = `${aiCoverProfileName(active)} · ${aiCoverCountLabel(profiles.length, "style")}`;
+    setTextContentIfChanged(els.aiCoverPromptProfileSummary, label);
+  }
+
+  function updateAiCoverCandidateSummary() {
+    const count = aiCoverCandidates.length;
+    if (!count) {
+      setLocalizedTextIfChanged(els.aiCoverCandidateSummary, "No generated covers yet.");
+      return;
+    }
+    setTextContentIfChanged(els.aiCoverCandidateSummary, `${aiCoverCountLabel(count, "cover")} in this session`);
+  }
+
+  function renderAiCoverKeyRow(key) {
+    const id = shared.escapeHtml(key.id);
+    const actionControl = key.enabled
+      ? `<b class="ai-cover-row-state" data-i18n="Active">${shared.escapeHtml(localizeText("Active"))}</b>`
+      : `<button class="secondary compact" type="button" data-ai-key-action="activate" data-ai-key-id="${id}" data-i18n="Activate">${shared.escapeHtml(localizeText("Activate"))}</button>`;
+    const keyMeta = [
+      aiCoverProviderLabel(key),
+      maskedAiCoverKey(key.apiKey),
+      key.baseUrl || AI_COVER_DEFAULT_BASE_URL,
+      aiCoverKeyStatusText(key)
+    ].map((value) => shared.escapeHtml(value)).join(" · ");
+    return `
+      <div class="ai-cover-key-row" data-ai-key-id="${id}" data-active="${key.enabled ? "true" : "false"}">
+        <div class="ai-cover-key-main">
+          <strong>${shared.escapeHtml(key.name || "API key")}</strong>
+          <span>${keyMeta}</span>
+        </div>
+        ${actionControl}
+        <button class="secondary compact" type="button" data-ai-key-action="test" data-ai-key-id="${id}" data-i18n="Test">Test</button>
+        <button class="secondary compact danger" type="button" data-ai-key-action="remove" data-ai-key-id="${id}" data-i18n="Remove">Remove</button>
+      </div>
+    `;
+  }
+
+  function renderAiCoverKeyList() {
+    const keys = aiCoverKeys();
+    const html = keys.length
+      ? keys.map(renderAiCoverKeyRow).join("")
+      : aiCoverEmptyHtml("No API keys added yet.");
+    if (setSourceHtmlIfChanged(els.aiCoverKeyList, html)) translateDynamicDom(els.aiCoverKeyList);
+    updateAiCoverKeySummary();
+  }
+
+  function syncAiCoverPromptProfileSelect() {
+    const profiles = aiCoverPromptProfiles();
+    const active = activeAiCoverPromptProfile();
+    const html = profiles
+      .map((profile) => `<option value="${shared.escapeHtml(profile.id)}">${shared.escapeHtml(aiCoverProfileName(profile))}</option>`)
+      .join("");
+    if (setSourceHtmlIfChanged(els.aiCoverPromptProfileSelect, html)) translateDynamicDom(els.aiCoverPromptProfileSelect);
+    setPropertyValueIfChanged(els.aiCoverPromptProfileSelect, "value", active?.id || profiles[0]?.id || "");
+    updateAiCoverPromptProfileSummary();
+  }
+
+  function renderAiCoverPromptProfileRow(profile, activeId, canRemove) {
+    const id = shared.escapeHtml(profile.id);
+    const isActive = profile.id === activeId;
+    const actionControl = isActive
+      ? `<b class="ai-cover-row-state" data-i18n="In use">${shared.escapeHtml(localizeText("In use"))}</b>`
+      : `<button class="secondary compact" type="button" data-ai-prompt-action="activate" data-ai-prompt-id="${id}" data-i18n="Use">${shared.escapeHtml(localizeText("Use"))}</button>`;
+    return `
+      <div class="ai-cover-prompt-profile-row" data-ai-prompt-id="${id}" data-active="${isActive ? "true" : "false"}">
+        <button class="ai-cover-prompt-profile-main" type="button" data-ai-prompt-action="edit" data-ai-prompt-id="${id}">
+          <strong>${shared.escapeHtml(aiCoverProfileName(profile))}</strong>
+          <span>${shared.escapeHtml(profile.prompt || localizeText("No style description yet."))}</span>
+        </button>
+        <div class="ai-cover-prompt-profile-actions">
+          ${actionControl}
+          <button class="secondary compact" type="button" data-ai-prompt-action="edit" data-ai-prompt-id="${id}" data-i18n="Edit">Edit</button>
+          <button class="secondary compact danger" type="button" data-ai-prompt-action="remove" data-ai-prompt-id="${id}" ${canRemove ? "" : "disabled"} data-i18n="Delete">Delete</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAiCoverPromptProfileList() {
+    const profiles = aiCoverPromptProfiles();
+    const active = activeAiCoverPromptProfile();
+    const html = profiles.length
+      ? profiles.map((profile) => renderAiCoverPromptProfileRow(profile, active?.id || "", profiles.length > 1)).join("")
+      : aiCoverEmptyHtml("No cover styles yet.");
+    if (setSourceHtmlIfChanged(els.aiCoverPromptProfileList, html)) translateDynamicDom(els.aiCoverPromptProfileList);
+    syncAiCoverPromptProfileSelect();
+  }
+
+  function resetAiCoverPromptProfileEditor(profile = null) {
+    editingAiCoverPromptProfileId = profile?.id || "";
+    setPropertyValueIfChanged(els.aiCoverPromptProfileName, "value", profile?.name || "");
+    setPropertyValueIfChanged(els.aiCoverPromptProfilePrompt, "value", profile?.prompt || "");
+    setLocalizedTextIfChanged(els.aiCoverSavePromptProfile, profile ? "Save changes" : "Save style");
+  }
+
+  function syncAiCoverControls() {
+    setPropertyValueIfChanged(els.aiCoverApiKey, "value", "");
+    setPropertyValueIfChanged(els.aiCoverKeyName, "value", "");
+    setPropertyValueIfChanged(els.aiCoverApiProvider, "value", "openai");
+    aiCoverCustomBaseUrlDraft = "";
+    syncAiCoverProviderControls();
+    setPropertyValueIfChanged(els.aiCoverModel, "value", aiCoverSettings.model || AI_COVER_DEFAULT_MODEL);
+    setPropertyValueIfChanged(els.aiCoverRounds, "value", String(aiCoverSettings.rounds || 1));
+    setPropertyValueIfChanged(els.aiCoverImagesPerRound, "value", String(aiCoverSettings.imagesPerRound || 2));
+    renderAiCoverKeyList();
+    renderAiCoverPromptProfileList();
+    updateAiCoverReadiness();
+    updateAiCoverCandidateSummary();
+  }
+
+  function readAiCoverControls() {
+    return normalizeAiCoverSettingsForStorage({
+      ...aiCoverSettings,
+      activePromptProfileId: els.aiCoverPromptProfileSelect?.value || aiCoverSettings.activePromptProfileId || "",
+      model: els.aiCoverModel?.value || AI_COVER_DEFAULT_MODEL,
+      rounds: els.aiCoverRounds?.value || 1,
+      imagesPerRound: els.aiCoverImagesPerRound?.value || 2
+    });
+  }
+
+  function applyAiCoverSettings(options = aiCoverSettings) {
+    aiCoverSettings = normalizeAiCoverSettingsForStorage(options);
+    syncAiCoverControls();
+  }
+
+  async function setAiCoverSettings(nextOptions, { persist = true } = {}) {
+    applyAiCoverSettings(nextOptions);
+    if (persist && hasChromeApi()) {
+      await chrome.storage.local.set({ [STORAGE_AI_COVER_SETTINGS]: aiCoverSettingsPayload() });
+    }
+  }
+
+  async function restoreAiCoverSettings() {
+    if (hasChromeApi()) {
+      const stored = await startupStorage();
+      applyAiCoverSettings(stored[STORAGE_AI_COVER_SETTINGS] || aiCoverSettings);
+      return;
+    }
+    applyAiCoverSettings(aiCoverSettings);
+  }
+
+  function nextAiCoverKeyId() {
+    return `key_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  }
+
+  function nextAiCoverPromptProfileId() {
+    return `prompt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  }
+
+  function syncAiCoverProviderControls({ motion = false } = {}) {
+    if (!els.aiCoverApiBaseUrl) return;
+    const preset = aiCoverProviderPreset(els.aiCoverApiProvider?.value || "openai");
+    const previousProvider = els.aiCoverApiBaseUrl.dataset.provider || "";
+    const previousPreset = aiCoverProviderPreset(previousProvider || "openai");
+    if (previousProvider === "custom") aiCoverCustomBaseUrlDraft = String(els.aiCoverApiBaseUrl.value || "").trim();
+    if (preset.baseUrl) {
+      setPropertyValueIfChanged(els.aiCoverApiBaseUrl, "value", preset.baseUrl);
+      setAttributeValueIfChanged(els.aiCoverApiBaseUrl, "placeholder", preset.baseUrl);
+    } else {
+      const knownPresetUrl = AI_COVER_API_PROVIDER_PRESETS.some((item) => item.baseUrl && item.baseUrl === aiCoverCustomBaseUrlDraft);
+      setPropertyValueIfChanged(els.aiCoverApiBaseUrl, "value", knownPresetUrl ? "" : aiCoverCustomBaseUrlDraft);
+      setAttributeValueIfChanged(els.aiCoverApiBaseUrl, "placeholder", "https://api.example.com/v1");
+    }
+    setBooleanPropertyIfChanged(els.aiCoverApiBaseUrl, "readOnly", Boolean(preset.baseUrl));
+    setDatasetValueIfChanged(els.aiCoverApiBaseUrl, "provider", preset.id);
+    if (preset.defaultModel && els.aiCoverModel) {
+      const currentModel = String(els.aiCoverModel.value || "").trim();
+      const knownDefaultModels = aiCoverKnownDefaultModels();
+      if (!currentModel || currentModel === previousPreset.defaultModel || knownDefaultModels.includes(currentModel)) {
+        setPropertyValueIfChanged(els.aiCoverModel, "value", preset.defaultModel);
+      }
+    }
+    if (motion) markAiCoverMotion(els.aiCoverApiBaseUrl, "provider-sync");
+  }
+
+  function aiCoverApiErrorMessage(body, fallback) {
+    const error = body?.error;
+    const message = typeof error === "string" ? error : error?.message || body?.message;
+    return String(message || "").trim() || fallback;
+  }
+
+  function aiCoverApiUrl(baseUrl = AI_COVER_DEFAULT_BASE_URL, path = "") {
+    const url = new URL(baseUrl || AI_COVER_DEFAULT_BASE_URL);
+    const rootPath = url.pathname.replace(/\/+$/g, "");
+    const nextPath = String(path || "").replace(/^\/+/g, "");
+    url.pathname = `${rootPath}/${nextPath}`.replace(/\/{2,}/g, "/");
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  }
+
+  function aiCoverApiPermissionPattern(baseUrl = AI_COVER_DEFAULT_BASE_URL) {
+    try {
+      const url = new URL(baseUrl || AI_COVER_DEFAULT_BASE_URL);
+      if (url.protocol === "https:") return `${url.origin}/*`;
+      if (url.protocol === "http:" && isAiCoverLoopbackHost(url.hostname)) return `${url.origin}/*`;
+      return "";
+    } catch {
+      return "";
+    }
+  }
+
+  async function ensureAiCoverApiPermission(baseUrl = AI_COVER_DEFAULT_BASE_URL) {
+    const permission = aiCoverApiPermissionPattern(baseUrl);
+    if (!permission || !hasChromeApi() || !chrome.permissions?.contains) {
+      return { ok: true, requested: permission ? [permission] : [], granted: true };
+    }
+    try {
+      if (await chrome.permissions.contains({ origins: [permission] })) {
+        return { ok: true, requested: [permission], granted: true };
+      }
+      if (!chrome.permissions?.request) {
+        return { ok: false, requested: [permission], error: "API host permission is not available in this browser context." };
+      }
+      const granted = await chrome.permissions.request({ origins: [permission] });
+      return { ok: granted, requested: [permission], granted };
+    } catch (error) {
+      return { ok: false, requested: [permission], error: error?.message || String(error) };
+    }
+  }
+
+  async function verifyAiCoverKeyConnection({ key = null, apiKey = "", baseUrl = "", provider = "", model: requestedModel = "" } = {}) {
+    key = key || { apiKey, baseUrl, provider };
+    if (!isAllowedAiCoverApiUrl(key.baseUrl || "")) {
+      throw new Error("Use an HTTPS URL, or http:// for a local address.");
+    }
+    const model = aiCoverModelForProvider(requestedModel || aiCoverSettings.model, key.provider);
+    const permission = await ensureAiCoverApiPermission(key.baseUrl);
+    if (!permission.ok) throw new Error(permission.error || "API host permission was not granted.");
+    const authHeaders = { Authorization: `Bearer ${key.apiKey}` };
+    // Confirm the key by retrieving the model, then by listing models. Many
+    // OpenAI-compatible servers implement neither route even though
+    // images/generations works, so a missing probe must never block a usable
+    // key: only a clear auth rejection (401/403) or an unreachable host is
+    // fatal. Everything else is saved and confirmed on the first generation.
+    let reachable = false;
+    for (const path of [`/models/${encodeURIComponent(model)}`, "/models"]) {
+      let response;
+      try {
+        response = await fetch(aiCoverApiUrl(key.baseUrl, path), { headers: authHeaders });
+      } catch {
+        continue;
+      }
+      reachable = true;
+      if (response.ok) return { ok: true, verified: true, status: response.status, checkedAt: Date.now(), model };
+      if (response.status === 401 || response.status === 403) {
+        const body = await response.json().catch(() => null);
+        throw new Error(aiCoverApiErrorMessage(body, `HTTP ${response.status}`));
+      }
+    }
+    if (reachable) return { ok: true, verified: false, status: 0, checkedAt: Date.now(), model };
+    throw new Error("Could not reach the API. Check the Base URL and your connection.");
+  }
+
+  async function addAiCoverKeyFromControls() {
+    const apiKey = String(els.aiCoverApiKey?.value || "").trim();
+    if (!apiKey) {
+      setAiCoverStatus("Paste an API key before adding it.", "error");
+      setAiCoverKeyTestResult({
+        tone: "error",
+        title: "Connection not tested",
+        detail: "Paste an API key first."
+      });
+      return;
+    }
+    const keys = aiCoverKeys();
+    const provider = aiCoverProviderFromControls();
+    if (!provider.baseUrl) {
+      setAiCoverStatus("Enter a compatible API Base URL.", "error");
+      setAiCoverKeyTestResult({
+        tone: "error",
+        title: "Connection not tested",
+        detail: "Enter a compatible API Base URL."
+      });
+      els.aiCoverApiBaseUrl?.focus?.();
+      return;
+    }
+    if (!isAllowedAiCoverApiUrl(provider.baseUrl)) {
+      setAiCoverStatus("Use an HTTPS URL, or http:// for a local address.", "error");
+      setAiCoverKeyTestResult({
+        tone: "error",
+        title: "Connection not tested",
+        detail: "Use an HTTPS URL, or http:// for a local address."
+      });
+      els.aiCoverApiBaseUrl?.focus?.();
+      return;
+    }
+    setBooleanPropertyIfChanged(els.aiCoverAddKey, "disabled", true);
+    setLocalizedTextIfChanged(els.aiCoverAddKey, "Testing...");
+    setAiCoverStatus("Testing API connection...", "work");
+    setAiCoverKeyTestResult({
+      tone: "work",
+      title: "Testing connection",
+      detail: "Checking {provider} with {model}...",
+      values: { provider: provider.label, model: aiCoverModelForProvider(readAiCoverControls().model, provider.id) }
+    });
+    let lastTest;
+    try {
+      lastTest = await verifyAiCoverKeyConnection({
+        apiKey,
+        baseUrl: provider.baseUrl,
+        provider: provider.id,
+        model: readAiCoverControls().model
+      });
+    } catch (error) {
+      const message = error?.message || String(error);
+      setAiCoverStatus("API key test failed: {error}", "error", { error: message });
+      setAiCoverKeyTestResult({
+        tone: "error",
+        title: "Connection failed",
+        detail: "{error}",
+        values: { error: message }
+      });
+      setBooleanPropertyIfChanged(els.aiCoverAddKey, "disabled", false);
+      setLocalizedTextIfChanged(els.aiCoverAddKey, "Add key");
+      return;
+    }
+    const name = String(els.aiCoverKeyName?.value || "").trim() || `${provider.label} key ${keys.length + 1}`;
+    await setAiCoverSettings({
+      ...readAiCoverControls(),
+      keys: [
+        ...keys.map((key) => ({ ...key, enabled: false })),
+        {
+          id: nextAiCoverKeyId(),
+          name,
+          apiKey,
+          provider: provider.id,
+          providerName: provider.label,
+          baseUrl: provider.baseUrl,
+          enabled: true,
+          createdAt: Date.now(),
+          lastTest
+        }
+      ]
+    });
+    setPropertyValueIfChanged(els.aiCoverApiKey, "value", "");
+    if (els.aiCoverApiBaseUrl && !els.aiCoverApiBaseUrl.readOnly) {
+      setPropertyValueIfChanged(els.aiCoverApiBaseUrl, "value", provider.baseUrl);
+    }
+    if (lastTest.verified === false) {
+      setAiCoverStatus("API key added and activated.", "ok");
+      setAiCoverKeyTestResult({
+        tone: "ok",
+        title: "Key saved",
+        detail: "{provider} accepted the key. {model} is checked on the first cover.",
+        values: { provider: provider.label, model: lastTest.model }
+      });
+    } else {
+      setAiCoverStatus("API key verified, added, and activated.", "ok");
+      setAiCoverKeyTestResult({
+        tone: "ok",
+        title: "Connection verified",
+        detail: "{provider} responded with {model}. This key is now active.",
+        values: { provider: provider.label, model: lastTest.model }
+      });
+    }
+    updateAiCoverReadiness();
+    setBooleanPropertyIfChanged(els.aiCoverAddKey, "disabled", false);
+    setLocalizedTextIfChanged(els.aiCoverAddKey, "Add key");
+  }
+
+  async function activateAiCoverKey(id) {
+    await setAiCoverSettings({
+      ...readAiCoverControls(),
+      activeKeyId: id,
+      keys: aiCoverKeys().map((key) => ({ ...key, enabled: key.id === id }))
+    });
+    setAiCoverStatus("API key activated.", "ok");
+    updateAiCoverReadiness();
+  }
+
+  async function removeAiCoverKey(id) {
+    const remaining = aiCoverKeys().filter((key) => key.id !== id);
+    await setAiCoverSettings({
+      ...readAiCoverControls(),
+      apiKey: "",
+      keys: remaining,
+      activeKeyId: remaining.find((key) => key.enabled)?.id || remaining[0]?.id || ""
+    });
+    setAiCoverStatus("API key removed.", "idle");
+    updateAiCoverReadiness();
+  }
+
+  async function saveAiCoverPromptProfile() {
+    const profiles = aiCoverPromptProfiles();
+    const existing = findAiCoverPromptProfile(editingAiCoverPromptProfileId);
+    const name = String(els.aiCoverPromptProfileName?.value || "").trim() || existing?.name || `Style ${profiles.length + 1}`;
+    const prompt = String(els.aiCoverPromptProfilePrompt?.value || "").trim();
+    if (!prompt) {
+      setAiCoverStatus("Add a style prompt before saving.", "error");
+      return;
+    }
+    const now = Date.now();
+    const id = existing?.id || nextAiCoverPromptProfileId();
+    const nextProfile = {
+      id,
+      name,
+      prompt,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+      lastUsedAt: existing?.lastUsedAt || 0
+    };
+    const nextProfiles = existing
+      ? profiles.map((profile) => profile.id === id ? nextProfile : profile)
+      : [...profiles, nextProfile];
+    await setAiCoverSettings({
+      ...readAiCoverControls(),
+      promptProfiles: nextProfiles,
+      activePromptProfileId: id
+    });
+    resetAiCoverPromptProfileEditor();
+    setAiCoverStatus("Cover style saved.", "ok");
+  }
+
+  async function activateAiCoverPromptProfile(id) {
+    const profile = findAiCoverPromptProfile(id);
+    if (!profile) return;
+    await setAiCoverSettings({
+      ...readAiCoverControls(),
+      activePromptProfileId: id
+    });
+    setAiCoverStatus("Cover style selected.", "ok");
+  }
+
+  function editAiCoverPromptProfile(id) {
+    const profile = findAiCoverPromptProfile(id);
+    if (!profile) return;
+    resetAiCoverPromptProfileEditor(profile);
+    setAiCoverStatus("Editing cover style.", "idle");
+    els.aiCoverPromptProfilePrompt?.focus?.();
+  }
+
+  async function removeAiCoverPromptProfile(id) {
+    const profiles = aiCoverPromptProfiles();
+    if (profiles.length <= 1) {
+      setAiCoverStatus("Keep at least one cover style.", "error");
+      return;
+    }
+    const remaining = profiles.filter((profile) => profile.id !== id);
+    await setAiCoverSettings({
+      ...readAiCoverControls(),
+      promptProfiles: remaining,
+      activePromptProfileId: remaining.find((profile) => profile.id === aiCoverSettings.activePromptProfileId)?.id || remaining[0]?.id || ""
+    });
+    if (editingAiCoverPromptProfileId === id) resetAiCoverPromptProfileEditor();
+    setAiCoverStatus("Cover style removed.", "idle");
+  }
+
+  async function markAiCoverPromptProfileUsed(profileId) {
+    if (!profileId) return;
+    const lastUsedAt = Date.now();
+    await setAiCoverSettings({
+      ...readAiCoverControls(),
+      activePromptProfileId: profileId,
+      promptProfiles: aiCoverPromptProfiles().map((profile) =>
+        profile.id === profileId ? { ...profile, lastUsedAt } : profile
+      )
+    });
+  }
+
+  async function testAiCoverKey(id) {
+    const key = aiCoverKeys().find((item) => item.id === id);
+    if (!key?.apiKey) return;
+    const model = aiCoverModelForProvider(aiCoverSettings.model, key.provider);
+    setAiCoverStatus(`Testing ${key.name || "API key"}...`, "work");
+    setAiCoverKeyTestResult({
+      tone: "work",
+      title: "Testing connection",
+      detail: "Checking {provider} with {model}...",
+      values: { provider: aiCoverProviderLabel(key), model }
+    });
+    let lastTest;
+    try {
+      lastTest = await verifyAiCoverKeyConnection({
+        apiKey: key.apiKey,
+        baseUrl: key.baseUrl,
+        provider: key.provider,
+        model: aiCoverSettings.model
+      });
+      if (lastTest.verified === false) {
+        setAiCoverStatus("Key saved. It is checked on the first cover.", "ok");
+        setAiCoverKeyTestResult({
+          tone: "ok",
+          title: "Key saved",
+          detail: "{provider} accepted the key. {model} is checked on the first cover.",
+          values: { provider: aiCoverProviderLabel(key), model: lastTest.model }
+        });
+      } else {
+        setAiCoverStatus("API key test passed.", "ok");
+        setAiCoverKeyTestResult({
+          tone: "ok",
+          title: "Connection verified",
+          detail: "{provider} responded with {model}.",
+          values: { provider: aiCoverProviderLabel(key), model: lastTest.model }
+        });
+      }
+    } catch (error) {
+      lastTest = { ok: false, error: error?.message || String(error), checkedAt: Date.now(), model };
+      setAiCoverStatus("API key test failed: {error}", "error", { error: lastTest.error });
+      setAiCoverKeyTestResult({
+        tone: "error",
+        title: "Connection failed",
+        detail: "{error}",
+        values: { error: lastTest.error }
+      });
+    }
+    await setAiCoverSettings({
+      ...readAiCoverControls(),
+      keys: aiCoverKeys().map((item) => item.id === id ? { ...item, lastTest } : item)
+    });
   }
 
   function normalizeSuccessFeedbackOptions(options = {}) {
@@ -1013,11 +2017,18 @@
     }).catch(() => null);
   }
 
+  function schedulePageSuccessCelebrationFallback(summary = null) {
+    if (!successFeedbackOptions.confetti) return;
+    window.setTimeout(() => {
+      void requestPageSuccessCelebration(summary);
+    }, 450);
+  }
+
   function triggerSuccessFeedback(summary = null) {
     const key = String(latestProgress?.startedAt || summary?.elapsedMs || Date.now());
     if (key && key === lastSuccessFeedbackKey) return;
     lastSuccessFeedbackKey = key;
-    if (successFeedbackOptions.confetti) void requestPageSuccessCelebration(summary);
+    schedulePageSuccessCelebrationFallback(summary);
     if (successFeedbackOptions.sound) void playSuccessSound();
   }
 
@@ -1436,7 +2447,7 @@
     }
     const nodes = {
       label: item.querySelector("strong"),
-      detail: item.querySelector("div > span"),
+      detail: item.querySelector(":scope > div > span") || item.querySelector(":scope > span"),
       status: item.querySelector("em")
     };
     rowQueryCache.set(item, nodes);
@@ -1486,6 +2497,7 @@
     populateLanguageSelect();
     updateDraftBrief();
     updateDraftEditorStatus();
+    updatePublishRail();
     if (recordHistoryRestored || els.recordsPanel?.classList.contains("active")) renderRecordHistory();
     if (persist && hasChromeApi()) {
       chrome.storage.local.set({ [STORAGE_LANGUAGE]: i18n?.preference?.() || currentLanguage });
@@ -1868,7 +2880,7 @@
       }
     }
     const coverOnly = coverSource && !coverInBody ? 1 : 0;
-    const total = bodyImages + tables + coverOnly;
+    const total = bodyImages + coverOnly;
     return {
       bodyImages,
       tables,
@@ -2657,7 +3669,7 @@
     applyStoredDraftQueue(stored);
     restoreDraftFromStoredValue(stored[STORAGE_DRAFT], { analyze: false });
     runWhenIdle(() => {
-      analyzeDraft();
+      analyzeDraft({ deferDetails: true });
     }, STARTUP_DRAFT_ANALYZE_DELAY_MS);
   }
 
@@ -2976,8 +3988,7 @@
   function setMarkdownEditorOpen(open) {
     if (!els.recordEditSheet) return;
     setBooleanPropertyIfChanged(els.recordEditSheet, "hidden", !open);
-    setDatasetValueIfChanged(document.body, "modalOpen", open ? "true" : "false");
-    setDatasetValueIfChanged(document.documentElement, "modalOpen", open ? "true" : "false");
+    updateModalOpenState();
   }
 
   function recordEditorText() {
@@ -3168,22 +4179,22 @@
     syncProgressiveSectionVisibility(context);
   }
 
-  function scheduleAnalyzeDraft(delay = DRAFT_ANALYZE_DELAY_MS) {
+  function scheduleAnalyzeDraft(delay = DRAFT_ANALYZE_DELAY_MS, options = {}) {
     window.clearTimeout(draftAnalyzeTimer);
     draftAnalyzeTimer = window.setTimeout(() => {
       draftAnalyzeTimer = null;
-      analyzeDraft();
+      analyzeDraft(options);
     }, delay);
   }
 
-  function analyzeDraftNow() {
+  function analyzeDraftNow(options = {}) {
     window.clearTimeout(draftAnalyzeTimer);
     draftAnalyzeTimer = null;
-    analyzeDraft();
+    analyzeDraft(options);
   }
 
-  function analyzeDraft() {
-    renderDraftAnalysis();
+  function analyzeDraft(options = {}) {
+    renderDraftAnalysis(options);
   }
 
   function syncDraftInspectorMetrics(parsed = null, counts = shared.segmentCounts([])) {
@@ -3192,9 +4203,53 @@
     setTextContentIfChanged(els.imageMetric, String(counts.image || 0));
     setTextContentIfChanged(els.tableMetric, String(counts.table || 0));
     setTextContentIfChanged(els.tweetMetric, String(counts.tweet || 0));
+    const metadataOptions = importOptionsPayload();
+    const coverMeta = !parsed
+      ? "Load Markdown or write a cover idea when ready."
+      : metadataOptions.setCover === false
+        ? "Cover import is off; direct cover generation still works."
+        : parsed.cover
+          ? "Draft already has a cover source; generate only if you want a replacement."
+          : "No cover source found; generate one when ready.";
+    setLocalizedTextIfChanged(els.draftCoverToolMeta, coverMeta);
   }
 
-  function renderDraftAnalysis() {
+  function renderDraftDetails(markdown, parsed, counts, context = {}) {
+    if (markdown !== draftText() || parsed !== latestParsed) return;
+    const imageSummary = context.imageSummary || draftImageSummary(parsed);
+    renderPreview(parsed, counts);
+    updateConversionMap(parsed, counts, { imageSummary });
+    updateImportLedger(parsed, counts);
+    renderDraftReview(parsed, counts, { imageSummary });
+    updatePreflight();
+  }
+
+  function scheduleDraftDetailRender(markdown, parsed, counts, context = {}) {
+    cancelDeferredDraftDetailRender();
+    const imageSummary = context.imageSummary || draftImageSummary(parsed);
+    const tasks = [
+      () => renderPreview(parsed, counts),
+      () => updateConversionMap(parsed, counts, { imageSummary }),
+      () => updateImportLedger(parsed, counts),
+      () => renderDraftReview(parsed, counts, { imageSummary }),
+      () => updatePreflight()
+    ];
+    let index = 0;
+    const runNext = () => {
+      draftDetailRenderIdleHandle = null;
+      if (markdown !== draftText() || parsed !== latestParsed) return;
+      const task = tasks[index];
+      index += 1;
+      task?.();
+      if (index < tasks.length) {
+        draftDetailRenderIdleHandle = runWhenIdle(runNext, STARTUP_IDLE_TIMEOUT_MS);
+      }
+    };
+    draftDetailRenderIdleHandle = runWhenIdle(runNext, STARTUP_IDLE_TIMEOUT_MS);
+  }
+
+  function renderDraftAnalysis({ deferDetails = false } = {}) {
+    cancelDeferredDraftDetailRender();
     const markdown = draftText();
     if (!markdown.trim()) {
       latestParsed = null;
@@ -3210,6 +4265,7 @@
       updatePreflight();
       updateWriteButton();
       updateProgressiveSections();
+      updateAiCoverReadiness();
       syncDraftMediaAlert(null);
       updateDraftEditorStatus();
       if (!queueModeActive()) {
@@ -3232,22 +4288,22 @@
       }
       if (!remoteImages.length) resetRemoteImageProbeStatus(parsed);
       const imageSummary = draftImageSummary(parsed);
-      renderPreview(parsed, counts);
-      updateConversionMap(parsed, counts, { imageSummary });
-      updateImportLedger(parsed, counts);
-      renderDraftReview(parsed, counts, { imageSummary });
-      updatePreflight();
       updateWriteButton();
       updateProgressiveSections();
+      updateAiCoverReadiness();
       syncDraftMediaAlert(mediaUploadEstimate(parsed));
       updateDraftEditorStatus();
       setDraftDropStatus("Markdown loaded", draftReadyDetail(markdown.length, counts), "done");
+      if (deferDetails) scheduleDraftDetailRender(markdown, parsed, counts, { imageSummary });
+      else renderDraftDetails(markdown, parsed, counts, { imageSummary });
     } catch (error) {
+      cancelDeferredDraftDetailRender();
       latestParsed = null;
       latestParsedMarkdown = "";
       latestCounts = shared.segmentCounts([]);
       log(`Could not analyze draft: ${error?.message || error}`);
       showMarkdownLoadError(error?.message || MARKDOWN_LOAD_ERROR_DETAIL);
+      updateAiCoverReadiness();
     }
   }
 
@@ -3334,6 +4390,331 @@
     if (setSourceHtmlIfChanged(els.importLedgerList, importLedgerHtml)) {
       translateDynamicDom(importLedgerSection);
     }
+  }
+
+  function buildPublishRailTargetRow(byId) {
+    const target = byId.get("target") || {};
+    const pageScript = byId.get("page-script") || {};
+    const targetLock = byId.get("target-lock") || {};
+    const editor = byId.get("editor") || {};
+    if (target.tone !== "ok") {
+      return {
+        id: "target",
+        tone: latestParsed?.segments?.length || queueModeActive() ? "warn" : "idle",
+        label: "X",
+        detail: "Connect the target page.",
+        status: "Open"
+      };
+    }
+    if (pageScript.tone === "error") {
+      return {
+        id: "target",
+        tone: "error",
+        label: "X",
+        detail: "Refresh the X Article tab so the latest xPoster page script handles images.",
+        status: "Refresh"
+      };
+    }
+    if (targetLock.tone === "error") {
+      return {
+        id: "target",
+        tone: "error",
+        label: "X",
+        detail: targetLock.detail || "Run Check article again before importing.",
+        status: "Check"
+      };
+    }
+    if (targetLock.tone !== "ok") {
+      return {
+        id: "target",
+        tone: "warn",
+        label: "X",
+        detail: "Run Check to confirm target.",
+        status: "Check"
+      };
+    }
+    if (editor.tone === "ok") {
+      return {
+        id: "target",
+        tone: "ok",
+        label: "X",
+        detail: "Editor ready.",
+        status: "Ready"
+      };
+    }
+    return {
+      id: "target",
+      tone: "ready",
+      label: "X",
+      detail: "Can create a draft.",
+      status: "Can create"
+    };
+  }
+
+  function buildPublishRailDraftRow() {
+    if (queueModeActive()) {
+      return {
+        id: "draft",
+        tone: "ok",
+        label: "Draft",
+        detail: localizeInterpolated("{count} queued draft(s).", { count: draftQueue.length }),
+        status: "Queue"
+      };
+    }
+    if (latestParsed?.segments?.length) {
+      const titleState = localizeText(latestParsed.title ? "title ready" : "no title");
+      return {
+        id: "draft",
+        tone: "ok",
+        label: "Draft",
+        detail: localizeInterpolated("{count} publishable block(s), {titleState}.", {
+          count: latestParsed.segments.length,
+          titleState
+        }),
+        status: "Loaded"
+      };
+    }
+    if (draftText().trim()) {
+      return {
+        id: "draft",
+        tone: "warn",
+        label: "Draft",
+        detail: "No publishable blocks detected yet.",
+        status: "Review"
+      };
+    }
+    return {
+      id: "draft",
+      tone: "idle",
+      label: "Draft",
+      detail: "Paste or choose Markdown.",
+      status: "Idle"
+    };
+  }
+
+  function publishRailAssetDetail(counts = activePreflightCounts()) {
+    const parts = [];
+    if (counts.image) parts.push(formatCompactUnit(counts.image, "image", "images", "张图片"));
+    if (counts.table) parts.push(formatCompactUnit(counts.table, "table", "tables", "个表格"));
+    if (counts.tweet) parts.push(formatCompactUnit(counts.tweet, "tweet", "tweets", "条推文"));
+    return parts.join(", ");
+  }
+
+  function buildPublishRailAssetsRow(byId, context = {}) {
+    const hasDraft = queueModeActive() || Boolean(latestParsed?.segments?.length);
+    if (!hasDraft) {
+      return {
+        id: "assets",
+        tone: "idle",
+        label: "Assets",
+        detail: "Waiting for draft.",
+        status: "Idle"
+      };
+    }
+    const counts = preflightSegmentCounts(context);
+    const estimate = activePreflightMediaEstimate();
+    const assets = byId.get("assets") || {};
+    const uploads = byId.get("uploads") || {};
+    if (estimate.overSoftLimit) {
+      return {
+        id: "assets",
+        tone: "error",
+        label: "Assets",
+        detail: mediaLimitWarningText(estimate),
+        status: "Limit"
+      };
+    }
+    if (assets.tone === "error") {
+      return {
+        id: "assets",
+        tone: "error",
+        label: "Assets",
+        detail: assets.detail || "Local image path blocked.",
+        status: "Blocked"
+      };
+    }
+    if (assets.tone === "warn") {
+      return {
+        id: "assets",
+        tone: "warn",
+        label: "Assets",
+        detail: assets.detail || "Choose the local image folder.",
+        status: "Folder"
+      };
+    }
+    if ((counts.image || 0) > 0 && uploads.tone !== "ok") {
+      return {
+        id: "assets",
+        tone: "warn",
+        label: "Assets",
+        detail: "Open the X editor and run Check so images can upload.",
+        status: "Check"
+      };
+    }
+    if (estimate.nearSoftLimit) {
+      return {
+        id: "assets",
+        tone: "warn",
+        label: "Assets",
+        detail: mediaHeadroomText(estimate),
+        status: "Limit"
+      };
+    }
+    const detail = publishRailAssetDetail(counts);
+    if (detail) {
+      return {
+        id: "assets",
+        tone: "ok",
+        label: "Assets",
+        detail,
+        status: "Ready"
+      };
+    }
+    return {
+      id: "assets",
+      tone: "ok",
+      label: "Assets",
+      detail: "No image or table uploads required.",
+      status: "Text only"
+    };
+  }
+
+  function buildPublishRailCoverRow() {
+    const generated = aiCoverCandidates.length;
+    const hasDraft = Boolean(latestParsed?.segments?.length || draftText().trim());
+    if (generated) {
+      return {
+        id: "cover",
+        tone: "ready",
+        label: "Cover",
+        detail: localizeInterpolated("{count} generated cover candidate(s) ready.", { count: generated }),
+        status: "Generated"
+      };
+    }
+    if (!hasDraft) {
+      return {
+        id: "cover",
+        tone: "idle",
+        label: "Cover",
+        detail: "Optional until needed.",
+        status: "Optional"
+      };
+    }
+    if (importOptions.setCover === false) {
+      return {
+        id: "cover",
+        tone: "idle",
+        label: "Cover",
+        detail: "Cover import is off; generation still works.",
+        status: "Off"
+      };
+    }
+    if (latestParsed?.cover) {
+      return {
+        id: "cover",
+        tone: "ok",
+        label: "Cover",
+        detail: "Draft cover source is ready.",
+        status: "Detected"
+      };
+    }
+    return {
+      id: "cover",
+      tone: "warn",
+      label: "Cover",
+      detail: "Generate one or add frontmatter cover.",
+      status: "Missing"
+    };
+  }
+
+  function publishNextStepFromRows(rows, gate = null) {
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const draft = byId.get("draft") || {};
+    const target = byId.get("target") || {};
+    const assets = byId.get("assets") || {};
+
+    if (draft.tone !== "ok") {
+      return {
+        step: "draft",
+        tone: draft.tone || "idle",
+        title: "Add Markdown",
+        detail: draft.detail || "Paste or choose Markdown."
+      };
+    }
+    if (target.tone === "error") {
+      return {
+        step: "check",
+        tone: "error",
+        title: target.status === "Refresh" ? "Refresh X Article" : "Check X Article",
+        detail: target.detail || "Run Check before writing."
+      };
+    }
+    if (target.tone === "warn" || target.tone === "idle") {
+      return {
+        step: target.status === "Open" ? "target" : "check",
+        tone: "warn",
+        title: target.status === "Open" ? "Open X Articles" : "Check X Article",
+        detail: target.detail || "Open X Articles before writing."
+      };
+    }
+    if (assets.tone === "error") {
+      return {
+        step: "assets",
+        tone: "error",
+        title: assets.status === "Limit" ? "Reduce images" : "Fix image paths",
+        detail: assets.detail || "Open details to fix image handling."
+      };
+    }
+    if (assets.tone === "warn") {
+      return {
+        step: "assets",
+        tone: "warn",
+        title: assets.status === "Folder" ? "Choose image folder" : "Check image upload",
+        detail: assets.detail || "Open details to finish image handling."
+      };
+    }
+    if (gate?.ok) {
+      return {
+        step: "import",
+        tone: "ready",
+        title: "Ready to write",
+        detail: "Click the Write button below when you are ready."
+      };
+    }
+    if (gate?.message) {
+      return {
+        step: "check",
+        tone: gate.tone || "warn",
+        title: "Needs attention",
+        detail: gate.message
+      };
+    }
+    return {
+      step: "import",
+      tone: "ready",
+      title: "Ready to write",
+      detail: "Click the Write button below when you are ready."
+    };
+  }
+
+  function updatePublishRail(checks = buildPreflightChecks(), gate = null, context = {}) {
+    if (!els.publishRail) return;
+    const byId = context.byId || indexPreflightChecks(checks);
+    const rows = [
+      buildPublishRailTargetRow(byId),
+      buildPublishRailDraftRow(),
+      buildPublishRailAssetsRow(byId, { ...context, byId }),
+      buildPublishRailCoverRow()
+    ];
+    const next = publishNextStepFromRows(rows, gate);
+    setDatasetValueIfChanged(els.publishRail, "tone", next.tone || "idle");
+    setDatasetValueIfChanged(els.publishRail, "publishStep", next.step || "");
+    setLocalizedTextIfChanged(publishNextTitle, next.title || "Next step");
+    setLocalizedTextIfChanged(publishNextDetail, next.detail || "");
+    const label = `${localizeText("Next step")}: ${localizeText(next.title || "")}. ${localizeText(next.detail || "")}`;
+    setAttributeValueIfChanged(els.publishRail, "aria-label", label);
+    setAttributeValueIfChanged(els.publishRail, "title", label);
+    translateDynamicDom(els.publishRail, { syncEnvironment: false });
   }
 
   function buildImportLedger(parsed = latestParsed, counts = latestCounts) {
@@ -3490,9 +4871,9 @@
         indexLabel: String(index),
         kind: "table",
         label: "Markdown table",
-        detail: `${segment.headers.length} column(s), ${segment.rows.length} row(s); rendered to ${operation?.op?.file?.fileName || "table image"}.`,
-        path: "Upload media",
-        tone: state.uploadReady ? "ok" : "warn"
+        detail: `${segment.headers.length} column(s), ${segment.rows.length} row(s); inserted as an X Markdown table block.`,
+        path: "Markdown table",
+        tone: state.bridgeReady ? "ok" : "warn"
       };
     }
     if (segment.type === "tweet") {
@@ -3584,7 +4965,7 @@
     const status = latestPageStatus || {};
     const main = latestDiagnostics?.main || {};
     const vault = status.vault || latestDiagnostics?.vault || {};
-    const needsUploads = (counts.image || 0) + (counts.table || 0) > 0;
+    const needsUploads = (counts.image || 0) > 0;
     const uploadReady = !needsUploads || Boolean(main.hasOnFilesAdded);
     const bridgeReady = Boolean(main.hasDraftStateNode);
     const localReady = !localImages.length || (vault.configured && vault.permission === "granted");
@@ -3595,7 +4976,7 @@
         ["cover", "Cover", "idle", "Waiting for frontmatter cover or first image.", 0],
         ["text", "Text", "idle", "Headings, paragraphs, lists, quotes, links, and inline styles.", 0],
         ["image", "Images", "idle", "Prepared as files, then uploaded through X.", 0],
-        ["table", "Tables", "idle", "Rendered as images before upload.", 0],
+        ["table", "Tables", "idle", "Inserted as X Markdown table blocks.", 0],
         ["tweet", "Tweets", "idle", "Inserted as embedded tweets in X.", 0],
         ["code", "Code", "idle", "Inserted as code blocks in X.", 0],
         ["divider", "Dividers", "idle", "Inserted as dividers in X.", 0],
@@ -3655,11 +5036,11 @@
       {
         id: "table",
         label: "Tables",
-        tone: counts.table ? (uploadReady ? "ok" : "warn") : "idle",
+        tone: counts.table ? (bridgeReady ? "ok" : "warn") : "idle",
         detail: counts.table
-          ? uploadReady
-            ? "Tables render to PNG and upload through X."
-            : "Open the X editor and run Check so table images can upload."
+          ? bridgeReady
+            ? "Tables use X's native Markdown table rendering."
+            : "Open the X editor and run Check so tables can be inserted."
           : "No tables detected.",
         count: counts.table || 0
       },
@@ -3755,7 +5136,7 @@
     const notes = [];
     const metadataOptions = importOptionsPayload();
     const { localImages, remoteImages, absoluteLocalImages, coverInBody } = context.imageSummary || draftImageSummary(parsed);
-    const uploadCount = (counts.image || 0) + (counts.table || 0);
+    const uploadCount = counts.image || 0;
 
     if (!metadataOptions.setTitle) notes.push({ tone: "idle", text: "Title setting is off; headings stay in the article body." });
     else if (parsed.titleFromCandidate) notes.push({ tone: "ok", text: `Title will use file name: ${parsed.title}` });
@@ -3801,16 +5182,16 @@
     if (uploadCount) {
       notes.push({
         tone: "warn",
-        text: `${uploadCount} media item(s) will be uploaded through X (${counts.image || 0} image, ${counts.table || 0} rendered table).`
+        text: `${uploadCount} image item(s) will be uploaded through X. Tables stay editable through X Markdown.`
       });
     } else {
       notes.push({ tone: "ok", text: "No media uploads required." });
     }
 
-    if (counts.tweet || counts.code || counts.divider) {
+    if (counts.tweet || counts.code || counts.divider || counts.table) {
       notes.push({
         tone: "ok",
-        text: `${(counts.tweet || 0) + (counts.code || 0) + (counts.divider || 0)} special content block(s) will be placed in X.`
+        text: `${(counts.tweet || 0) + (counts.code || 0) + (counts.divider || 0) + (counts.table || 0)} special content block(s) will be placed in X.`
       });
     }
 
@@ -3973,7 +5354,7 @@
   function renderPlanBreakdown(plan, summary) {
     setLocalizedTextIfChanged(
       planBreakdownDetail,
-      `${summary.textBlocks} text part(s), ${summary.images} image/table upload(s), ${summary.atomic} special block(s).`
+      `${summary.textBlocks} text part(s), ${summary.images} image upload(s), ${summary.atomic} special block(s).`
     );
     const safe = shared.escapeHtml;
     const visibleStepLimit = 8;
@@ -3990,11 +5371,11 @@
     for (const item of plan.plan) {
       if (renderedSteps >= visibleStepLimit) break;
       if (item.op.type === "image") {
-        const label = item.op.coverOnly ? "Cover image" : item.marker.includes("_TABLE_") ? "Table image" : "Image";
+        const label = item.op.coverOnly ? "Cover image" : "Image";
         const fileName = item.op.file?.fileName || "prepared media";
         stepsHtml += stepItemHtml("Upload image", `${label} will upload as ${fileName}.`);
       } else {
-        const entity = item.op.entityType === "MARKDOWN" ? "code block" : item.op.entityType === "TWEET" ? "tweet link" : "divider";
+        const entity = item.op.table ? "Markdown table" : item.op.entityType === "MARKDOWN" ? "code block" : item.op.entityType === "TWEET" ? "tweet link" : "divider";
         stepsHtml += stepItemHtml("Place block", `${entity} will be placed where it appears in your draft.`);
       }
       renderedSteps += 1;
@@ -4025,6 +5406,7 @@
     const gate = getImportGate(checks, preflightContext);
     const actions = els.importDraft?.closest(".actions");
     if (actions) setDatasetValueIfChanged(actions, "empty", latestParsed?.segments?.length ? "false" : "true");
+    updatePublishRail(checks, gate, preflightContext);
     updateWriteButton();
     updateLiveRunbook(checks, gate, preflightContext);
     updateProofDeck(checks, gate, preflightContext);
@@ -4371,8 +5753,8 @@
     const hasImportEvidence = Boolean(latestEvidence?.kind?.startsWith("import"));
     const importSucceeded = latestEvidence?.kind === "import";
     const importFailed = latestEvidence?.kind === "import-error";
-    const needsMedia = (counts.image || 0) + (counts.table || 0) > 0;
-    const needsBridge = (counts.tweet || 0) + (counts.code || 0) + (counts.divider || 0) > 0 || plan.summary.markers > 0;
+    const needsMedia = (counts.image || 0) > 0;
+    const needsBridge = (counts.tweet || 0) + (counts.code || 0) + (counts.divider || 0) + (counts.table || 0) > 0 || plan.summary.markers > 0;
     const metadataOptions = importOptionsPayload();
     const metadataParts = [];
     if (metadataOptions.setTitle && latestParsed?.title) metadataParts.push("title");
@@ -4417,9 +5799,9 @@
         label: "Prepare media",
         tone: needsMedia ? mediaTone : latestParsed ? "ok" : "idle",
         detail: needsMedia
-          ? `${counts.image || 0} image(s) and ${counts.table || 0} table(s) will be uploaded into X when reachable.`
+          ? `${counts.image || 0} image(s) will be uploaded into X when reachable. Tables use X Markdown blocks.`
           : latestParsed
-            ? "No image or table upload is needed for this draft."
+            ? "No image upload is needed for this draft."
             : "Images and tables will be prepared after parsing.",
         status: needsMedia ? mediaStatus : latestParsed ? "Skipped" : "Idle"
       },
@@ -4434,7 +5816,7 @@
       },
       {
         id: "replace",
-        label: "Place embeds and code",
+        label: "Place blocks",
         tone: importSucceeded
           ? "ok"
           : needsBridge
@@ -4443,7 +5825,7 @@
               ? "ok"
               : "idle",
         detail: needsBridge
-          ? `${plan.summary.atomic} embed/code/divider item(s) and ${plan.summary.images} image/table item(s) need the X editor.`
+          ? `${plan.summary.atomic} table/embed/code/divider item(s) and ${plan.summary.images} image item(s) need the X editor.`
           : latestParsed
             ? "No embeds, code blocks, dividers, images, or tables need extra placement."
             : "X editor status is unknown.",
@@ -4666,15 +6048,15 @@
       {
         id: "uploads",
         label: "Uploads",
-        tone: images || tables
+        tone: images
           ? (main.hasOnFilesAdded ? "ok" : latestDiagnostics ? "error" : "warn")
           : "ok",
         detail:
-          images || tables
+          images
             ? main.hasOnFilesAdded
-              ? `${images + tables} media upload item(s) can upload through X.`
-              : "Open the X editor and run Check so images and tables can upload."
-            : "No image or table uploads required."
+              ? `${images} image upload item(s) can upload through X.`
+              : "Open the X editor and run Check so images can upload."
+            : "No image uploads required."
       },
       {
         id: "assets",
@@ -4697,7 +6079,7 @@
         label: "Import plan",
         tone: hasPlan ? "ok" : "error",
         detail: hasPlan
-          ? `${specialBlocks} embed/code/divider item(s), ${images} image(s), ${tables} table image(s), ${counts.tweet || 0} tweet embed(s).`
+          ? `${(counts.code || 0) + (counts.divider || 0) + tables} table/code/divider item(s), ${images} image(s), ${counts.tweet || 0} tweet embed(s).`
           : "No import plan available yet."
       }
     ];
@@ -4725,9 +6107,7 @@
       if (segment.type !== "table") return;
       map.set(segment, {
         ok: true,
-        base64: "preview",
-        mime: "image/png",
-        fileName: `table-${index + 1}.png`
+        native: true
       });
     });
     return map;
@@ -4794,6 +6174,388 @@
         localImages: localImageReferences(parsed).length
       }
     };
+  }
+
+  function selectedDraftText() {
+    const textarea = els.markdown;
+    if (!textarea) return "";
+    const start = Math.max(0, Number(textarea.selectionStart || 0));
+    const end = Math.max(start, Number(textarea.selectionEnd || start));
+    return textarea.value.slice(start, end).trim();
+  }
+
+  function selectedAiCoverSourceText() {
+    const selected = selectedDraftText();
+    return selected ? selected.slice(0, 5000) : "";
+  }
+
+  function syncAiCoverPromptInputFromSelection() {
+    const sourceText = selectedAiCoverSourceText();
+    if (sourceText) setPropertyValueIfChanged(els.aiCoverPromptInput, "value", sourceText);
+    return sourceText;
+  }
+
+  function markAiCoverMotion(node, name, duration = 280) {
+    if (!node || !name || prefersReducedMotion()) return;
+    const previousTimer = aiCoverMotionTimers.get(node);
+    if (previousTimer) window.clearTimeout(previousTimer);
+    removeDatasetValueIfChanged(node, "motion");
+    const animate = () => {
+      setDatasetValueIfChanged(node, "motion", name);
+      const timer = window.setTimeout(() => {
+        removeDatasetValueIfChanged(node, "motion");
+        aiCoverMotionTimers.delete(node);
+      }, duration);
+      aiCoverMotionTimers.set(node, timer);
+    };
+    if (window.requestAnimationFrame) window.requestAnimationFrame(animate);
+    else animate();
+  }
+
+  function setAiCoverStatus(text, tone = "idle", values = null) {
+    const writeStatus = values
+      ? (node) => setLocalizedMessageIfChanged(node, text, values)
+      : (node) => setLocalizedTextIfChanged(node, text);
+    writeStatus(els.aiCoverStatus);
+    setDatasetValueIfChanged(els.aiCoverStatus, "tone", tone);
+    markAiCoverMotion(els.aiCoverStatus, "status");
+    writeStatus(els.aiCoverApiStatus);
+    setDatasetValueIfChanged(els.aiCoverApiStatus, "tone", tone);
+    markAiCoverMotion(els.aiCoverApiStatus, "status");
+    writeStatus(els.aiCoverPromptProfileStatus);
+    setDatasetValueIfChanged(els.aiCoverPromptProfileStatus, "tone", tone);
+    markAiCoverMotion(els.aiCoverPromptProfileStatus, "status");
+  }
+
+  function setAiCoverKeyTestResult({ tone = "idle", title = "Connection check", detail = "The key is tested before it is saved.", values = {} } = {}) {
+    if (!els.aiCoverKeyTest) return;
+    setBooleanPropertyIfChanged(els.aiCoverKeyTest, "hidden", false);
+    setDatasetValueIfChanged(els.aiCoverKeyTest, "tone", tone);
+    setLocalizedMessageIfChanged(els.aiCoverKeyTestTitle, title, values);
+    setLocalizedMessageIfChanged(els.aiCoverKeyTestDetail, detail, values);
+    markAiCoverMotion(els.aiCoverKeyTest, "status");
+  }
+
+  function resetAiCoverKeyTestResult() {
+    if (!els.aiCoverKeyTest) return;
+    setBooleanPropertyIfChanged(els.aiCoverKeyTest, "hidden", true);
+    setDatasetValueIfChanged(els.aiCoverKeyTest, "tone", "idle");
+    setLocalizedTextIfChanged(els.aiCoverKeyTestTitle, "Connection check");
+    setLocalizedTextIfChanged(els.aiCoverKeyTestDetail, "The key is tested before it is saved.");
+  }
+
+  function aiCoverReadinessState() {
+    if (!shared.activeAiCoverApiKey(aiCoverSettings)) {
+      return { ready: false, state: "key", tone: "warn", messageKey: "Add an API key to start.", buttonKey: "Add key first", values: {} };
+    }
+    if (!aiCoverPromptSourceText()) {
+      return { ready: false, state: "source", tone: "warn", messageKey: "Add a cover idea or selected text.", buttonKey: "Add cover idea", values: {} };
+    }
+    const total = Math.max(1, Number(aiCoverSettings.rounds || 1) * Number(aiCoverSettings.imagesPerRound || 1));
+    return {
+      ready: true,
+      state: "ready",
+      tone: "ok",
+      messageKey: total === 1 ? "Ready to generate {count} cover." : "Ready to generate {count} covers.",
+      buttonKey: total === 1 ? "Generate {count} cover" : "Generate {count} covers",
+      values: { count: total }
+    };
+  }
+
+  function updateAiCoverReadiness() {
+    const readiness = aiCoverReadinessState();
+    const hasKey = Boolean(shared.activeAiCoverApiKey(aiCoverSettings));
+    setLocalizedMessageIfChanged(els.aiCoverReadiness, readiness.messageKey, readiness.values);
+    setDatasetValueIfChanged(els.aiCoverReadiness, "tone", readiness.tone);
+    setLocalizedTextIfChanged(els.aiCoverManageKey, hasKey ? "Manage key" : "Add key");
+    if (aiCoverGenerationAbort) {
+      setLocalizedTextIfChanged(els.aiCoverGenerate, "Stop generation");
+      setBooleanPropertyIfChanged(els.aiCoverGenerate, "disabled", false);
+    } else {
+      setLocalizedMessageIfChanged(els.aiCoverGenerate, readiness.buttonKey, readiness.values);
+      setBooleanPropertyIfChanged(els.aiCoverGenerate, "disabled", !readiness.ready);
+    }
+    setLocalizedMessageIfChanged(els.aiCoverGenerationSummary, readiness.messageKey, readiness.values);
+    setDatasetValueIfChanged(els.aiCoverGeneratorDialog, "readiness", readiness.state || "idle");
+    return readiness;
+  }
+
+  function aiCoverPreset() {
+    return els.aiCoverPreset?.value || "minimal-editorial";
+  }
+
+  function aiCoverPromptSourceText() {
+    return String(els.aiCoverPromptInput?.value || "").trim();
+  }
+
+  function throwIfAiCoverGenerationStopped(signal) {
+    if (!signal?.aborted) return;
+    throw new DOMException("Cover generation stopped.", "AbortError");
+  }
+
+  async function requestOpenAiCoverImages({ prompt, settings, signal } = {}) {
+    const requestSettings = settings || aiCoverSettings;
+    const activeKey = shared.activeAiCoverKey(requestSettings);
+    if (!activeKey?.apiKey) throw new Error("Add your API key in Settings first.");
+    const model = aiCoverModelForProvider(requestSettings.model, activeKey.provider);
+    const requestBody = {
+      model,
+      prompt,
+      size: requestSettings.requestSize || AI_COVER_REQUEST_SIZE,
+      n: requestSettings.imagesPerRound || 1
+    };
+    if (activeKey.provider === "gemini") requestBody.response_format = "b64_json";
+    const permission = await ensureAiCoverApiPermission(activeKey.baseUrl);
+    if (!permission.ok) throw new Error(permission.error || "API host permission was not granted.");
+    const response = await fetch(aiCoverApiUrl(activeKey.baseUrl, "/images/generations"), {
+      method: "POST",
+      signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${activeKey.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = aiCoverApiErrorMessage(body, `Image generation failed with HTTP ${response.status}`);
+      const error = new Error(message);
+      error.status = response.status;
+      throw error;
+    }
+    const images = Array.isArray(body?.data) ? body.data : [];
+    if (!images.length) throw new Error("The image API returned no image candidates.");
+    return images;
+  }
+
+  function validateAiCoverDataUrl(dataUrl) {
+    const parsed = shared.parseDataUri(dataUrl);
+    if (!parsed.ok) throw new Error(parsed.error || "Generated image data was invalid.");
+    const valid = shared.validateImagePayload(parsed.mime, parsed.bytes);
+    if (!valid.ok) throw new Error(valid.error || "Generated image data was invalid.");
+    return dataUrl;
+  }
+
+  function validateGeneratedImageResponse({ url = "", mime = "", bytes = 0 } = {}) {
+    if (url && !shared.isRemoteHttpImageSource(url)) {
+      throw new Error("Generated image URL must be a public HTTP(S) image URL.");
+    }
+    mime = String(mime || "").split(";")[0].trim().toLowerCase();
+    bytes = Number(bytes || 0);
+    if (mime || bytes) {
+      if (!mime) throw new Error("Generated image response did not include an image content type.");
+      const valid = shared.validateImagePayload(mime, bytes);
+      if (!valid.ok) throw new Error(valid.error || "Generated image response was invalid.");
+    }
+  }
+
+  async function fetchGeneratedImageAsDataUrl(url, signal) {
+    validateGeneratedImageResponse({ url });
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), AI_COVER_IMAGE_FETCH_TIMEOUT_MS);
+    const abortFromParent = () => controller.abort();
+    signal?.addEventListener?.("abort", abortFromParent, { once: true });
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error(`Could not download generated image: HTTP ${response.status}`);
+      const mime = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      const contentLength = Number(response.headers.get("content-length") || 0);
+      validateGeneratedImageResponse({ url, mime, bytes: contentLength });
+      const blob = await response.blob();
+      validateGeneratedImageResponse({ url, mime: blob.type || mime, bytes: blob.size });
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            resolve(validateAiCoverDataUrl(String(reader.result || "")));
+          } catch (error) {
+            reject(error);
+          }
+        };
+        reader.onerror = () => reject(new Error("Could not read generated image"));
+        reader.readAsDataURL(blob);
+      });
+    } finally {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener?.("abort", abortFromParent);
+    }
+  }
+
+  async function imageItemToDataUrl(item, signal) {
+    const base64 = item?.b64_json || item?.image_base64 || item?.base64_json || "";
+    if (base64) return validateAiCoverDataUrl(`data:image/png;base64,${base64}`);
+    const url = item?.url || item?.image_url || "";
+    if (!url) throw new Error("The image API response did not include image data.");
+    return fetchGeneratedImageAsDataUrl(url, signal);
+  }
+
+  function loadImageElement(src) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Could not decode generated image"));
+      image.src = src;
+    });
+  }
+
+  async function cropAiCoverToFiveTwo(dataUrl) {
+    const image = await loadImageElement(dataUrl);
+    const targetRatio = AI_COVER_OUTPUT_WIDTH / AI_COVER_OUTPUT_HEIGHT;
+    const sourceRatio = image.naturalWidth / image.naturalHeight;
+    let sx = 0;
+    let sy = 0;
+    let sw = image.naturalWidth;
+    let sh = image.naturalHeight;
+    if (sourceRatio > targetRatio) {
+      sw = Math.round(sh * targetRatio);
+      sx = Math.round((image.naturalWidth - sw) / 2);
+    } else if (sourceRatio < targetRatio) {
+      sh = Math.round(sw / targetRatio);
+      sy = Math.round((image.naturalHeight - sh) / 2);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = AI_COVER_OUTPUT_WIDTH;
+    canvas.height = AI_COVER_OUTPUT_HEIGHT;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((value) => (value ? resolve(value) : reject(new Error("Could not export cover image"))), "image/png");
+    });
+    const buffer = await blob.arrayBuffer();
+    return {
+      base64: shared.arrayBufferToBase64(buffer),
+      mime: "image/png",
+      fileName: `xposter-cover-${Date.now()}.png`,
+      bytes: buffer.byteLength,
+      width: canvas.width,
+      height: canvas.height
+    };
+  }
+
+  function revealAiCoverCandidates() {
+    if (els.aiCoverGeneratorDialog?.hidden) return;
+    const firstCard = els.aiCoverCandidates?.querySelector?.(".ai-cover-card");
+    if (!firstCard) return;
+    window.setTimeout(() => {
+      firstCard.scrollIntoView({
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+        block: "center",
+        inline: "nearest"
+      });
+    }, 0);
+  }
+
+  function renderAiCoverCandidates({ reveal = false } = {}) {
+    const candidates = aiCoverCandidates;
+    const html = candidates.length
+      ? candidates.map((candidate) => `
+          <article class="ai-cover-card" data-ai-cover-id="${shared.escapeHtml(candidate.id)}">
+            <img src="data:${shared.escapeHtml(candidate.mime || "image/png")};base64,${shared.escapeHtml(candidate.base64)}" alt="${shared.escapeHtml(candidate.alt || "Generated cover")}" width="${Number(candidate.width) || AI_COVER_OUTPUT_WIDTH}" height="${Number(candidate.height) || AI_COVER_OUTPUT_HEIGHT}" loading="lazy" decoding="async" />
+            <p class="ai-cover-card-meta">${shared.escapeHtml(candidate.meta)}</p>
+            <button class="secondary compact" type="button" data-ai-cover-action="set-cover" data-ai-cover-id="${shared.escapeHtml(candidate.id)}" data-i18n="Set as cover">Set as cover</button>
+          </article>
+        `).join("")
+      : aiCoverEmptyHtml("No generated covers yet.");
+    if (setSourceHtmlIfChanged(els.aiCoverCandidates, html)) translateDynamicDom(els.aiCoverCandidates);
+    if (reveal && candidates.length) revealAiCoverCandidates();
+    updateAiCoverCandidateSummary();
+    updatePublishRail();
+  }
+
+  async function generateAiCoverCandidates() {
+    const settings = readAiCoverControls();
+    await setAiCoverSettings(settings);
+    const readiness = updateAiCoverReadiness();
+    if (!readiness.ready) {
+      setAiCoverStatus(readiness.messageKey, readiness.tone, readiness.values);
+      return;
+    }
+    const sourceText = aiCoverPromptSourceText();
+    if (!sourceText) {
+      setAiCoverStatus("Add source text or select part of the draft first.", "error");
+      return;
+    }
+    const profile = activeAiCoverPromptProfile();
+    const prompt = shared.buildAiCoverPrompt({
+      defaultPrompt: profile?.prompt || settings.defaultPrompt,
+      preset: aiCoverPreset(),
+      sourceText
+    });
+    aiCoverGenerationAbort?.abort?.();
+    const generationAbort = new AbortController();
+    aiCoverGenerationAbort = generationAbort;
+    setLocalizedTextIfChanged(els.aiCoverGenerate, "Stop generation");
+    setBooleanPropertyIfChanged(els.aiCoverGenerate, "disabled", false);
+    setAiCoverStatus("Generating cover candidates...", "work");
+    let created = 0;
+    const previousCandidates = aiCoverCandidates;
+    const runCandidates = [];
+    try {
+      for (let round = 1; round <= settings.rounds; round += 1) {
+        throwIfAiCoverGenerationStopped(generationAbort.signal);
+        setAiCoverStatus("Generating round {round}/{total}...", "work", { round, total: settings.rounds });
+        const items = await requestOpenAiCoverImages({ prompt, settings, signal: generationAbort.signal });
+        for (let index = 0; index < items.length; index += 1) {
+          throwIfAiCoverGenerationStopped(generationAbort.signal);
+          const dataUrl = await imageItemToDataUrl(items[index], generationAbort.signal);
+          throwIfAiCoverGenerationStopped(generationAbort.signal);
+          const cropped = await cropAiCoverToFiveTwo(dataUrl);
+          created += 1;
+          const candidateLabel = localizeInterpolated("Candidate {count}", { count: created });
+          runCandidates.push({
+            id: `cover_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            ...cropped,
+            prompt,
+            profileId: profile?.id || "",
+            preset: aiCoverPreset(),
+            sourceText: sourceText.slice(0, 240),
+            alt: "Generated article cover",
+            meta: `${candidateLabel} · ${AI_COVER_OUTPUT_WIDTH}x${AI_COVER_OUTPUT_HEIGHT}`
+          });
+          aiCoverCandidates = [...runCandidates, ...previousCandidates].slice(0, AI_COVER_MAX_CANDIDATES);
+          renderAiCoverCandidates({ reveal: true });
+        }
+      }
+      if (created) await markAiCoverPromptProfileUsed(profile?.id || "");
+      setAiCoverStatus(created === 1 ? "Generated {count} cover candidate." : "Generated {count} cover candidates.", "ok", { count: created });
+    } catch (error) {
+      if (error?.name === "AbortError") setAiCoverStatus("Cover generation stopped.", "idle");
+      else setAiCoverStatus(error?.message || "Cover generation failed.", "error");
+    } finally {
+      if (aiCoverGenerationAbort === generationAbort) aiCoverGenerationAbort = null;
+      updateAiCoverReadiness();
+    }
+  }
+
+  async function setAiCoverCandidateAsArticleCover(id) {
+    const candidate = aiCoverCandidates.find((item) => item.id === id);
+    if (!candidate) return;
+    setAiCoverStatus("Setting selected cover on the current X Article...", "work");
+    const parsed = latestParsed || shared.parseMarkdown(draftText() || "Cover");
+    const target = await prepareSimpleWriteTarget(parsed, {
+      parsed,
+      counts: latestCounts
+    });
+    if (!target.ok) {
+      setAiCoverStatus(target.reason || "Open an X Article and run Check before setting a cover.", "error");
+      return;
+    }
+    const response = await sendToTargetTab({
+      type: "xposter:set-generated-cover",
+      file: {
+        base64: candidate.base64,
+        mime: candidate.mime,
+        fileName: candidate.fileName,
+        alt: "generated cover",
+        bytes: candidate.bytes
+      }
+    }, { requireArticles: true });
+    if (response?.ok) {
+      setAiCoverStatus("Selected cover applied to the current X Article.", "ok");
+      await refreshPageState().catch(() => {});
+      return;
+    }
+    setAiCoverStatus(response?.error || "Could not set the selected cover.", "error");
   }
 
   function buildEvidencePackage(reason = "manual") {
@@ -4938,8 +6700,8 @@
   function getImportGate(checks, context = {}) {
     const byId = context.byId || indexPreflightChecks(checks);
     const counts = preflightSegmentCounts(context);
-    const requiresBridge = (counts.code || 0) + (counts.divider || 0) + (counts.tweet || 0) > 0;
-    const requiresUploads = (counts.image || 0) + (counts.table || 0) > 0;
+    const requiresBridge = (counts.code || 0) + (counts.divider || 0) + (counts.tweet || 0) + (counts.table || 0) > 0;
+    const requiresUploads = (counts.image || 0) > 0;
     const requiresAssets = Boolean(preflightLocalImageFolderStatus(context).count);
     const blockers = [
       byId.get("draft")?.tone !== "ok" && "Add a Markdown draft first.",
@@ -5375,27 +7137,19 @@
   }
 
   function progressDetailForStatus(text) {
-    if (/prepar|准备/i.test(text)) return localizeText("Preparing Markdown, images, and the X editor.");
+    if (/checking .*image file|checked .*image file|检查.*图片文件/i.test(text)) return localizeText("Checking image files before upload.");
+    if (/prepar|准备/i.test(text)) return localizeText("Preparing the article and X editor.");
     if (/title|cover|标题|封面/i.test(text)) return localizeText("Setting article title and matching cover after ordered uploads.");
     if (/writing|paste|structured|写入/i.test(text)) return localizeText("Writing the article body into X.");
-    if (/upload|上传/i.test(text)) return localizeText("Uploading prepared images and rendered tables through X.");
+    if (/upload|上传/i.test(text)) return localizeText("Uploading prepared images through X.");
     if (/reorder|marker|special|insert|放置|清理/i.test(text)) return localizeText("Placing images, tweets, code, and dividers into the article.");
     if (/imported|written|complete|完成|已写入/i.test(text)) return localizeText("Writing finished.");
     return text ? localizeText(text) : localizeText("Live status received from the active X tab.");
   }
 
   function progressPercentForStatus(text, level) {
-    if (level === "done") return 100;
-    if (level === "error") return 100;
-    if (/prepar/i.test(text)) return 14;
-    if (/title/i.test(text)) return 24;
-    if (/writing|paste/i.test(text)) return 46;
-    if (/special|insert|marker/i.test(text)) return 58;
-    if (/upload/i.test(text)) return 70;
-    if (/reorder/i.test(text)) return 82;
-    if (/cover/i.test(text)) return 74;
-    if (/cleanup/i.test(text)) return 94;
-    return 18;
+    const progress = shared.importProgressForStatus(text, level);
+    return Number.isFinite(progress.percent) ? progress.percent : 18;
   }
 
   function summarizeProgressCompletion(summary) {
@@ -5528,6 +7282,7 @@
     updateLiveProgress();
     syncDraftSurface({ syntax: "none" });
     updateWriteButton();
+    updatePublishRail();
     showWorkspacePanel("draft");
   }
 
@@ -5536,6 +7291,7 @@
       applyTheme(currentThemeMode);
       applyImportOptions(importOptions, { refresh: false });
       applyArticleExportOptions(articleExportOptions);
+      applyAiCoverSettings(aiCoverSettings);
       applySuccessFeedbackOptions(successFeedbackOptions);
       await restoreLanguage();
       analyzeDraft();
@@ -5546,6 +7302,7 @@
     applyTheme(stored[STORAGE_THEME] || currentThemeMode);
     applyImportOptions(stored[STORAGE_IMPORT_OPTIONS] || importOptions, { refresh: false });
     applyArticleExportOptions(stored[STORAGE_ARTICLE_EXPORT_SETTINGS] || articleExportOptions);
+    applyAiCoverSettings(stored[STORAGE_AI_COVER_SETTINGS] || aiCoverSettings);
     applySuccessFeedbackOptions(stored[STORAGE_SUCCESS_FEEDBACK] || successFeedbackOptions);
     applyStartupDraftState(stored);
     await restoreLanguage();
@@ -5849,6 +7606,40 @@
     jump();
   }
 
+  async function handlePublishRailClick(event) {
+    const item = event.target?.closest?.("[data-publish-step]");
+    if (!item || !els.publishRail?.contains(item)) return;
+    const step = item.dataset.publishStep || "";
+    if (step === "target") {
+      if (!latestPageStatus?.isArticleRoute) {
+        await openArticles();
+        return;
+      }
+      await runPreflight();
+      return;
+    }
+    if (step === "check") {
+      await runPreflight();
+      return;
+    }
+    if (step === "draft") {
+      focusMarkdownInput();
+      return;
+    }
+    if (step === "assets") {
+      openDetailsFor(els.preflightPanel);
+      scrollTargetIntoView(els.preflightPanel, "center");
+      return;
+    }
+    if (step === "cover") {
+      openAiCoverGeneratorDialog();
+      return;
+    }
+    if (step === "import") {
+      els.importDraft?.focus?.();
+    }
+  }
+
   async function refreshPageState() {
     const tab = await targetTab();
     const url = tab?.url || "";
@@ -6072,10 +7863,11 @@
       persistDraftQueue();
       renderDraftQueue();
     }
+    const celebrateOnComplete = !batch || draftQueue.length <= 1;
     const response = await sendToTargetTab({
       type: "xposter:import-markdown",
       markdown,
-      options: writeOptionsPayload({ forceNewArticle: batch, sourceFileName: writeSourceFileName })
+      options: writeOptionsPayload({ forceNewArticle: batch, sourceFileName: writeSourceFileName, celebrateOnComplete })
     }, { requireArticles: true });
     importCancelRequested = false;
     uploadRetryRequested = false;
@@ -7425,7 +9217,13 @@
     let recordHistoryHtml = "";
     let translateRecordHistory = false;
     if (!total) {
-      recordHistoryHtml = `<li class="record-history-empty">Paste or load Markdown to save the first recoverable draft.</li>`;
+      recordHistoryHtml = `
+        <li class="record-history-empty">
+          <strong>No saved drafts yet</strong>
+          <span>Write or check a draft once. It will appear here so you can copy, edit, or write it again.</span>
+        </li>
+      `;
+      translateRecordHistory = true;
     } else if (!visibleTotal) {
       recordHistoryHtml = `
         <li class="record-history-empty">
@@ -7478,14 +9276,10 @@
           <div class="record-actions">
             ${summaryHtml}
             <div class="record-action-icons" aria-label="${safe("Record actions")}">
+              <button class="record-text-action" type="button" data-record-action="edit" data-record-id="${safe(record.id)}" title="${safe("Edit this saved Markdown.")}" aria-label="${safe("Edit this saved Markdown.")}">${safe("Edit")}</button>
+              <button class="record-text-action" type="button" data-record-action="copy-markdown" data-record-id="${safe(record.id)}" title="${safe("Copy this saved Markdown.")}" aria-label="${safe("Copy this saved Markdown.")}">${safe("Copy Markdown")}</button>
               <button class="record-icon-action record-delete-action" type="button" data-record-action="delete-record" data-record-id="${safe(record.id)}" title="${safe("Clear this record.")}" aria-label="${safe("Clear this record.")}">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.8 7h14.4"/><path d="M9.2 7V5.4c0-.6.4-1 1-1h3.6c.6 0 1 .4 1 1V7"/><path d="M7.4 10.2 8.1 19c.1.6.5 1 1.1 1h5.6c.6 0 1-.4 1.1-1l.7-8.8"/><path d="M10.4 11.6v5.4"/><path d="M13.6 11.6v5.4"/></svg>
-              </button>
-              <button class="record-icon-action" type="button" data-record-action="copy-markdown" data-record-id="${safe(record.id)}" title="${safe("Copy this saved Markdown.")}" aria-label="${safe("Copy this saved Markdown.")}">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h10v13H8V7Zm2 2v9h6V9h-6ZM5 4h10v2H7v10H5V4Z"/></svg>
-              </button>
-              <button class="record-icon-action" type="button" data-record-action="edit" data-record-id="${safe(record.id)}" title="${safe("Edit this saved Markdown.")}" aria-label="${safe("Edit this saved Markdown.")}">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.8 4.2a2.9 2.9 0 0 1 4.1 4.1L9.7 18.5 5 19l.5-4.7L15.8 4.2Zm1.4 1.4L7.4 15.4l-.2 1.4 1.4-.2 9.8-9.8a.9.9 0 0 0-1.2-1.2Z"/></svg>
               </button>
               ${linkAction}
             </div>
@@ -8206,12 +10000,21 @@
   els.draftEditorModeToggle?.addEventListener("click", () => {
     setDraftEditorMode(draftEditorMode === "read" ? "edit" : "read");
   });
+  els.draftInlinePreview?.addEventListener("error", (event) => {
+    if (event.target instanceof HTMLImageElement) markPreviewImageUnavailable(event.target);
+  }, true);
+  els.draftInlinePreview?.addEventListener("load", (event) => {
+    if (event.target instanceof HTMLImageElement) markPreviewImageLoaded(event.target);
+  }, true);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushDraftSave();
     else pollPageState();
   });
   window.addEventListener("pagehide", flushDraftSave);
   els.importDraft.addEventListener("click", runImportButtonAction);
+  els.publishRail?.addEventListener("click", (event) => {
+    void handlePublishRailClick(event);
+  });
   els.retryUpload?.addEventListener("click", retryUpload);
   els.cancelImport?.addEventListener("click", cancelImport);
   els.pageState?.addEventListener("click", async () => {
@@ -8290,10 +10093,12 @@
     if (input) setTheme(input.value);
   });
   els.metadataOptions?.addEventListener("change", () => {
+    const coverEnabled = els.importCoverOption?.checked === true;
     setImportOptions({
       ...importOptions,
       setTitle: els.importTitleOption?.checked !== false,
-      setCover: els.importCoverOption?.checked !== false
+      setCover: coverEnabled,
+      allowGraphqlMetadata: coverEnabled
     });
   });
   els.draftProcessingOptions?.addEventListener("change", () => {
@@ -8308,6 +10113,90 @@
       enabled: els.articleExportOption?.checked !== false
     });
   });
+  els.aiCoverOpenKeys?.addEventListener("click", () => openAiCoverApiDialog());
+  els.aiCoverOpenPromptProfiles?.addEventListener("click", openAiCoverPromptProfileDialog);
+  els.aiCoverOpenGenerator?.addEventListener("click", openAiCoverGeneratorDialog);
+  els.draftCoverTool?.addEventListener("click", handleAiCoverGeneratorOpenClick);
+  els.conversionMapList?.addEventListener("click", handleAiCoverGeneratorOpenClick);
+  els.aiCoverApiDialog?.addEventListener("click", (event) => {
+    if (aiCoverDialogWasClosed(event, els.aiCoverApiDialog)) {
+      if (!returnToAiCoverGeneratorFromKeyDialog()) closeAiCoverDialogs();
+    }
+  });
+  els.aiCoverPromptProfileDialog?.addEventListener("click", (event) => {
+    if (aiCoverDialogWasClosed(event, els.aiCoverPromptProfileDialog)) {
+      closeAiCoverDialogs();
+      return;
+    }
+    handleAiCoverPromptProfileAction(event);
+  });
+  els.aiCoverGeneratorDialog?.addEventListener("click", (event) => {
+    if (event.target?.closest?.("[data-ai-cover-open-keys]")) {
+      openAiCoverApiDialog({ returnToGenerator: true });
+      return;
+    }
+    if (event.target?.closest?.("[data-ai-cover-open-prompt-profiles]")) {
+      openAiCoverPromptProfileDialog();
+      return;
+    }
+    if (aiCoverDialogWasClosed(event, els.aiCoverGeneratorDialog)) {
+      closeAiCoverDialogs();
+    }
+  });
+  for (const dialog of aiCoverDialogElements()) {
+    dialog.addEventListener("keydown", closeAiCoverDialogOnEscape);
+  }
+  els.aiCoverGeneratorDialog?.addEventListener("change", (event) => {
+    if (event.target === els.aiCoverApiKey || event.target === els.aiCoverKeyName) return;
+    if (event.target === els.aiCoverPromptProfileSelect) {
+      void activateAiCoverPromptProfile(els.aiCoverPromptProfileSelect.value || "");
+      return;
+    }
+    void setAiCoverSettings(readAiCoverControls());
+  });
+  els.aiCoverGeneratorDialog?.addEventListener("input", (event) => {
+    if (event.target === els.aiCoverPromptInput) {
+      updateAiCoverReadiness();
+      return;
+    }
+    if (event.target === els.aiCoverApiKey || event.target === els.aiCoverKeyName) return;
+    void setAiCoverSettings(readAiCoverControls());
+  });
+  els.aiCoverAddKey?.addEventListener("click", () => {
+    void addAiCoverKeyFromControls();
+  });
+  els.aiCoverApiProvider?.addEventListener("change", () => {
+    resetAiCoverKeyTestResult();
+    syncAiCoverProviderControls({ motion: true });
+  });
+  els.aiCoverApiBaseUrl?.addEventListener("input", () => {
+    resetAiCoverKeyTestResult();
+    if (els.aiCoverApiProvider?.value === "custom") aiCoverCustomBaseUrlDraft = String(els.aiCoverApiBaseUrl.value || "").trim();
+  });
+  els.aiCoverApiKey?.addEventListener("input", resetAiCoverKeyTestResult);
+  els.aiCoverSavePromptProfile?.addEventListener("click", () => {
+    void saveAiCoverPromptProfile();
+  });
+  els.aiCoverKeyList?.addEventListener("click", handleAiCoverKeyAction);
+  els.aiCoverUseSelection?.addEventListener("click", () => {
+    const sourceText = syncAiCoverPromptInputFromSelection();
+    updateAiCoverReadiness();
+    setAiCoverStatus(sourceText ? "Cover source text updated." : "Select text in the draft first, or write a cover idea.", sourceText ? "ok" : "error");
+  });
+  els.aiCoverGenerate?.addEventListener("click", () => {
+    if (aiCoverGenerationAbort) {
+      abortAiCoverGeneration();
+      setAiCoverStatus("Cover generation stopped.", "idle");
+      updateAiCoverReadiness();
+      return;
+    }
+    void generateAiCoverCandidates();
+  });
+  els.aiCoverCandidates?.addEventListener("click", (event) => {
+    const button = event.target.closest('button[data-ai-cover-action="set-cover"]');
+    if (!button) return;
+    void setAiCoverCandidateAsArticleCover(button.dataset.aiCoverId || "");
+  });
   els.successFeedbackOptions?.addEventListener("change", () => {
     setSuccessFeedbackOptions({
       confetti: els.confettiOption?.checked !== false,
@@ -8321,6 +10210,16 @@
       soundStyle: els.successSoundStyle.value || "soft"
     });
     void previewSuccessFeedback();
+  });
+  els.supportWechat?.addEventListener("click", () => setSupportDialogOpen(true, "wechat"));
+  els.supportCoffee?.addEventListener("click", () => setSupportDialogOpen(true, "coffee"));
+  els.supportClose?.addEventListener("click", () => setSupportDialogOpen(false));
+  els.supportDone?.addEventListener("click", () => setSupportDialogOpen(false));
+  els.supportDialog?.addEventListener("click", (event) => {
+    if (event.target === els.supportDialog) setSupportDialogOpen(false);
+  });
+  els.supportDialog?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setSupportDialogOpen(false);
   });
   els.liveRunbookList.addEventListener("click", async (event) => {
     const button = event.target.closest("button[data-runbook-action]");
@@ -8353,7 +10252,9 @@
   });
 
   runAfterFirstPaint(() => {
-    restoreStartupState().catch(() => analyzeDraft());
+    runWhenIdle(() => {
+      restoreStartupState().catch(() => analyzeDraft());
+    }, STARTUP_IDLE_TIMEOUT_MS);
   });
   installSystemThemeSync();
   scheduleRecordHistoryRestore();

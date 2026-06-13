@@ -29,11 +29,11 @@ for (const locale of ["zh_TW", "ja", "fr", "ru", "de", "es", "pt_BR", "ko"]) {
     `${locale} Chrome locale messages should be present`
   );
 }
-assert.ok(!manifest.host_permissions, "remote image hosts must not be granted at install time");
+assert.ok(!manifest.host_permissions, "AI image API hosts must not be granted at install time");
 assert.deepEqual(
   manifest.optional_host_permissions,
   ["http://*/*", "https://*/*"],
-  "remote image hosts should be optional runtime permissions"
+  "remote image and optional AI API hosts should be optional runtime permissions"
 );
 
 const requiredFiles = [
@@ -110,6 +110,10 @@ const frontmatterOnlyCoverDraft = [
   "Body without a repeated image."
 ].join("\n");
 const frontmatterOnlyCoverParsed = shared.parseMarkdown(frontmatterOnlyCoverDraft);
+const metadataOnlyDraft = "---\ntags: \ncreate: 2026-06-01\nupdate: 2026-06-06\n---";
+const metadataOnlyParsed = shared.parseMarkdown(metadataOnlyDraft);
+const spacedFrontmatterDraft = "\uFEFF\n---   \ntitle: Spaced Meta\n---   \n\nBody after metadata.";
+const spacedFrontmatterParsed = shared.parseMarkdown(spacedFrontmatterDraft);
 const h1TitleDisabledParsed = shared.parseMarkdown("# Keep this heading\n\nBody text.", { setTitle: false });
 const fileTitleParsed = shared.parseMarkdown("Body text only", { sourceFileName: "Campaign Notes.md" });
 const fileTitlePathParsed = shared.parseMarkdown("Body text only", { sourceFileName: "/tmp/nested/Product Plan.markdown?download=1" });
@@ -195,6 +199,44 @@ const coverOnlyPlan = shared.buildPastePlan(
     }
   }
 );
+const aiCoverSettings = shared.normalizeAiCoverSettings({
+  apiKey: "sk-test",
+  keys: [
+    { id: "primary", name: "Primary", apiKey: "sk-primary", baseUrl: "https://api.openai.com/v1", enabled: false },
+    { id: "backup", name: "Backup", apiKey: "sk-backup", provider: "smartcoder", baseUrl: "https://gcli.smartcoder.ai/v1/", enabled: true }
+  ],
+  activeKeyId: "backup",
+  model: "",
+  defaultPrompt: "Muted editorial cover, elegant typography mood.",
+  rounds: 8,
+  imagesPerRound: 9
+});
+const migratedAiCoverPromptSettings = shared.normalizeAiCoverSettings({
+  defaultPrompt: "Legacy editorial style."
+});
+const aiCoverPromptProfileSettings = shared.normalizeAiCoverSettings({
+  promptProfiles: [
+    { id: "editorial", name: "Editorial calm", prompt: "Quiet editorial cover with generous whitespace." },
+    { id: "product", name: "Product explainers", prompt: "Structured product-system cover with refined diagrams." }
+  ],
+  activePromptProfileId: "product"
+});
+const aiCoverLastUsedPromptProfileSettings = shared.normalizeAiCoverSettings({
+  promptProfiles: [
+    { id: "older", name: "Older style", prompt: "Older prompt.", lastUsedAt: 100 },
+    { id: "newer", name: "Newer style", prompt: "Newer prompt.", lastUsedAt: 200 }
+  ]
+});
+const removedAiCoverSettings = shared.normalizeAiCoverSettings({
+  apiKey: "sk-legacy",
+  keys: [],
+  activeKeyId: ""
+});
+const aiCoverPrompt = shared.buildAiCoverPrompt({
+  defaultPrompt: aiCoverSettings.defaultPrompt,
+  preset: "minimal-editorial",
+  sourceText: "A long article about durable creator workflows."
+});
 const contentScriptText = readText("src/content.js");
 const backgroundText = readText("src/background.js");
 const mainWorldText = readText("src/main-world.js");
@@ -211,6 +253,239 @@ const sidepanelCss = readText("sidepanel.css");
 const sharedText = readText("src/shared.js");
 const booleanHelperNonBooleanUse = /setBooleanPropertyIfChanged\([^;\n]+,\s*"(?:value|tabIndex)"/;
 assert.ok(!booleanHelperNonBooleanUse.test(sidepanelText), "boolean property helper should not write value or tabIndex");
+assert.equal(aiCoverSettings.model, "gpt-image-2", "AI cover settings should default to GPT Image 2");
+assert.equal(aiCoverSettings.keys.length, 2, "AI cover settings should preserve multiple image API keys");
+assert.equal(aiCoverSettings.activeKeyId, "backup", "AI cover settings should preserve the active key");
+assert.equal(shared.activeAiCoverApiKey(aiCoverSettings), "sk-backup", "AI cover generation should use the active key");
+assert.equal(shared.activeAiCoverKey(aiCoverSettings)?.baseUrl, "https://gcli.smartcoder.ai/v1", "AI cover generation should use the active key API base URL");
+assert.equal(shared.activeAiCoverKey(aiCoverSettings)?.provider, "custom", "Legacy SmartCoder keys should migrate to the custom compatible API platform");
+assert.equal(shared.activeAiCoverKey(aiCoverSettings)?.providerName, "OpenAI-compatible API", "Legacy SmartCoder keys should use a readable compatible API name");
+assert.equal(
+  shared.normalizeAiCoverSettings({ keys: [{ id: "plain", apiKey: "sk-plain", baseUrl: "http://api.example.test/v1" }] }).keys.length,
+  0,
+  "AI cover API keys with plaintext HTTP endpoints should be rejected instead of silently retargeted"
+);
+assert.equal(removedAiCoverSettings.keys.length, 0, "AI cover settings should not resurrect legacy keys after keys are explicitly cleared");
+assert.equal(migratedAiCoverPromptSettings.promptProfiles.length, 1, "legacy AI cover default prompts should migrate into a named prompt profile");
+assert.equal(migratedAiCoverPromptSettings.promptProfiles[0]?.name, "Default style", "migrated AI cover prompts should receive a readable default name");
+assert.equal(migratedAiCoverPromptSettings.defaultPrompt, "Legacy editorial style.", "legacy AI cover default prompts should remain available to prompt generation");
+assert.equal(aiCoverPromptProfileSettings.promptProfiles.length, 2, "AI cover settings should preserve multiple named prompt profiles");
+assert.equal(aiCoverPromptProfileSettings.activePromptProfileId, "product", "AI cover settings should preserve the active prompt profile");
+assert.equal(shared.activeAiCoverPromptProfile(aiCoverPromptProfileSettings)?.prompt, "Structured product-system cover with refined diagrams.", "AI cover generation should use the active prompt profile");
+assert.equal(aiCoverPromptProfileSettings.defaultPrompt, "Structured product-system cover with refined diagrams.", "active prompt profiles should backfill the legacy defaultPrompt field");
+assert.equal(aiCoverLastUsedPromptProfileSettings.activePromptProfileId, "newer", "AI cover settings should default to the last-used prompt profile");
+assert.equal(aiCoverSettings.rounds, 6, "AI cover rounds should be capped");
+assert.equal(aiCoverSettings.imagesPerRound, 4, "AI cover images per round should be capped");
+assert.ok(aiCoverPrompt.includes("5:2"), "AI cover prompts should force a 5:2 cover composition");
+assert.ok(aiCoverPrompt.includes(aiCoverSettings.defaultPrompt), "AI cover prompts should include the user's default style prompt");
+assert.ok(aiCoverPrompt.includes("durable creator workflows"), "AI cover prompts should include the selected or inferred source text");
+assert.ok(
+  sidepanelRuntimeText.includes('STORAGE_AI_COVER_SETTINGS = "xposter_ai_cover_settings"') &&
+    sidepanelRuntimeText.includes("AI_COVER_DEFAULT_MODEL: \"gpt-image-2\"") &&
+    sidepanelRuntimeText.includes("AI_COVER_OUTPUT_WIDTH: 1500") &&
+    sidepanelRuntimeText.includes("AI_COVER_OUTPUT_HEIGHT: 600"),
+  "AI cover generator constants should be exposed through sidepanel config"
+);
+assert.ok(
+  includesAll(sidepanelHtml, [
+    'id="aiCoverSettings"',
+    'id="aiCoverOpenKeys"',
+    'id="aiCoverOpenGenerator"',
+    'id="aiCoverKeySummary"',
+    'id="aiCoverPromptProfileSummary"',
+    'id="aiCoverGenerationSummary"',
+    'id="aiCoverCandidateSummary"',
+    'id="aiCoverApiDialog"',
+    'id="aiCoverGeneratorDialog"',
+    'id="aiCoverPromptProfileDialog"',
+    'id="aiCoverKeyName"',
+    'id="aiCoverApiProvider"',
+    'id="aiCoverApiKey"',
+    'id="aiCoverApiBaseUrl"',
+    'id="aiCoverAddKey"',
+    'id="aiCoverKeyList"',
+    'id="aiCoverPromptProfileList"',
+    'id="aiCoverPromptProfileSelect"',
+    'id="aiCoverPromptProfileName"',
+    'id="aiCoverPromptProfilePrompt"',
+    'id="aiCoverSavePromptProfile"',
+    'id="aiCoverReadiness"',
+    'id="aiCoverModel"',
+    'id="aiCoverRounds"',
+    'id="aiCoverImagesPerRound"',
+    'id="aiCoverAdvancedOptions"',
+    'id="aiCoverPromptInput"',
+    'id="aiCoverGenerate"',
+    'id="aiCoverCandidates"',
+    'id="draftCoverTool"',
+    'id="draftCoverToolMeta"',
+    'data-ai-cover-open-generator',
+    'Generate cover'
+  ]),
+  "settings should expose image API cover generation configuration and candidates"
+);
+assert.ok(
+  sidepanelText.includes("function normalizeAiCoverSettingsForStorage") &&
+    sidepanelText.includes("function renderAiCoverKeyList") &&
+    sidepanelText.includes("function renderAiCoverPromptProfileList") &&
+    sidepanelText.includes("function aiCoverApiUrl") &&
+    sidepanelText.includes("async function ensureAiCoverApiPermission") &&
+    sidepanelText.includes("function aiCoverReadinessState") &&
+    sidepanelText.includes("function updateAiCoverReadiness") &&
+    sidepanelText.includes("function addAiCoverKeyFromControls") &&
+    sidepanelText.includes("function saveAiCoverPromptProfile") &&
+    sidepanelText.includes("function activateAiCoverPromptProfile") &&
+    sidepanelText.includes("function removeAiCoverPromptProfile") &&
+    sidepanelText.includes("async function testAiCoverKey") &&
+    sidepanelText.includes("async function generateAiCoverCandidates") &&
+    sidepanelText.includes("function revealAiCoverCandidates") &&
+    sidepanelText.includes("renderAiCoverCandidates({ reveal: true })") &&
+    sidepanelText.includes("async function requestOpenAiCoverImages") &&
+    sidepanelText.includes("async function cropAiCoverToFiveTwo") &&
+    sidepanelText.includes("async function setAiCoverCandidateAsArticleCover") &&
+    sidepanelText.includes('type: "xposter:set-generated-cover"'),
+  "sidepanel should generate AI cover candidates and send selected images to the X cover setter"
+);
+assert.ok(
+    sidepanelHtml.includes("AI article cover") &&
+    sidepanelHtml.includes("Generate article cover") &&
+    sidepanelHtml.includes("draft-cover-tool") &&
+    sidepanelHtml.includes("Load Markdown or write a cover idea when ready.") &&
+    sidepanelHtml.includes("ai-cover-summary-list") &&
+    sidepanelHtml.includes("aiCoverApiDialog") &&
+    sidepanelHtml.includes("aiCoverGeneratorDialog") &&
+    sidepanelHtml.includes("aiCoverPromptProfileDialog") &&
+    sidepanelHtml.includes("Image API keys") &&
+    sidepanelHtml.includes('data-i18n="Platform"') &&
+    sidepanelHtml.includes("Platform") &&
+    !sidepanelHtml.includes("SmartCoder") &&
+    sidepanelHtml.includes("Gemini") &&
+    sidepanelHtml.includes("OpenAI-compatible API") &&
+    sidepanelHtml.includes("OpenAI-compatible API Base URL") &&
+    sidepanelHtml.includes("Cover styles") &&
+    sidepanelHtml.includes("Cover idea") &&
+    sidepanelHtml.includes("Cover style") &&
+    sidepanelHtml.includes("Style and generation options") &&
+    sidepanelHtml.includes("Only this visible text is sent as the cover idea.") &&
+    sidepanelHtml.includes("data-ai-cover-open-keys") &&
+    sidepanelHtml.includes("data-ai-cover-open-prompt-profiles") &&
+    sidepanelHtml.includes("data-ai-cover-open-generator") &&
+    sidepanelHtml.includes("ai-cover-main-actions") &&
+    sidepanelHtml.includes("<details class=\"ai-cover-advanced ai-cover-field-wide\" id=\"aiCoverAdvancedOptions\">") &&
+    sidepanelText.includes("setLocalizedMessageIfChanged(els.aiCoverGenerate, readiness.buttonKey, readiness.values)") &&
+    sidepanelText.includes('setBooleanPropertyIfChanged(els.aiCoverGenerate, "disabled", !readiness.ready)') &&
+    sidepanelText.includes('return { ready: false, state: "key", tone: "warn", messageKey: "Add an API key to start.", buttonKey: "Add key first", values: {} };') &&
+    sidepanelText.includes('return { ready: false, state: "source", tone: "warn", messageKey: "Add a cover idea or selected text.", buttonKey: "Add cover idea", values: {} };') &&
+    sidepanelText.includes('setDatasetValueIfChanged(els.aiCoverGeneratorDialog, "readiness", readiness.state || "idle")') &&
+    sidepanelText.includes('const profile = activeAiCoverPromptProfile();') &&
+    sidepanelText.includes('buttonKey: total === 1 ? "Generate {count} cover" : "Generate {count} covers"'),
+  "AI cover UI should present a simple task flow, keep key management actionable, keep advanced generation settings collapsed, and disable generation until ready"
+);
+{
+  const openGeneratorStart = sidepanelText.indexOf("  function openAiCoverGeneratorDialog()");
+  const openGeneratorEnd = sidepanelText.indexOf("  function activeAiCoverPromptProfile", openGeneratorStart);
+  const openGeneratorBody = sidepanelText.slice(openGeneratorStart, openGeneratorEnd);
+  assert.ok(
+    openGeneratorBody.includes("renderAiCoverCandidates()") &&
+      !openGeneratorBody.includes("syncAiCoverPromptInputFromSelection") &&
+      sidepanelText.includes('els.draftCoverTool?.addEventListener("click", handleAiCoverGeneratorOpenClick)') &&
+      sidepanelText.includes('els.conversionMapList?.addEventListener("click"') &&
+      sidepanelText.includes("[data-ai-cover-open-generator]"),
+    "Cover row should open the generation drawer without auto-filling prompt text from the full draft"
+  );
+}
+assert.ok(!sidepanelHtml.includes("OpenAI Key"), "AI cover UI should not label generic provider credentials as OpenAI-only keys");
+assert.ok(
+  sidepanelHtml.indexOf('id="aiCoverApiProvider"') < sidepanelHtml.indexOf('id="aiCoverApiBaseUrl"'),
+  "AI cover key setup should ask users to choose the API platform before editing a base URL"
+);
+assert.ok(
+  sidepanelText.includes('for (const path of [`/models/${encodeURIComponent(model)}`, "/models"])') &&
+    sidepanelText.includes("response = await fetch(aiCoverApiUrl(key.baseUrl, path)") &&
+    sidepanelText.includes("if (reachable) return { ok: true, verified: false") &&
+    sidepanelText.includes('fetch(aiCoverApiUrl(activeKey.baseUrl, "/images/generations")') &&
+    sidepanelText.includes("if (!isAllowedAiCoverApiUrl(provider.baseUrl))") &&
+    sidepanelText.includes('if (!isAllowedAiCoverApiUrl(key.baseUrl || ""))') &&
+    sidepanelText.includes("function isAiCoverLoopbackHost") &&
+    sidepanelText.includes("function aiCoverProviderPreset") &&
+    sidepanelText.includes("AI_COVER_GEMINI_DEFAULT_MODEL") &&
+    sidepanelText.includes('if (activeKey.provider === "gemini") requestBody.response_format = "b64_json";') &&
+    sidepanelText.includes("function syncAiCoverProviderControls") &&
+    sidepanelText.includes('els.aiCoverApiProvider?.addEventListener("change"') &&
+    sidepanelText.includes("Enter a compatible API Base URL.") &&
+    sidepanelCss.includes(".ai-cover-credential-control") &&
+    sidepanelMessagesText.includes("Choose a platform first. Custom platforms need an OpenAI-compatible /v1 endpoint.") &&
+    sidepanelText.includes('data-ai-key-action="activate"') &&
+    sidepanelText.includes('data-ai-key-action="test"') &&
+    sidepanelText.includes('data-ai-key-action="remove"') &&
+    sidepanelText.includes('return { ...normalizeAiCoverSettingsForStorage(aiCoverSettings), apiKey: "" };'),
+  "AI cover settings should let users activate, test, and remove individual image API keys"
+);
+assert.ok(
+  includesAll(sidepanelCss, [
+    ".ai-cover-api-base-url[data-motion=\"provider-sync\"]",
+    "animation: xposter-ai-cover-provider-sync var(--motion-medium) var(--ease-out-quint) both;",
+    ".ai-cover-status[data-motion=\"status\"]",
+    ".draft-cover-tool",
+    "#aiCoverGeneratorDialog .ai-cover-generator-dialog",
+    ".ai-cover-card",
+    "animation: xposter-ai-cover-card-in var(--motion-medium) var(--ease-out-quint) both;",
+    "@keyframes xposter-ai-cover-drawer-in",
+    "@keyframes xposter-ai-cover-provider-sync",
+    "@keyframes xposter-ai-cover-card-in",
+    "prefers-reduced-motion: reduce"
+  ]) &&
+    includesAll(sidepanelText, [
+      "function markAiCoverMotion",
+      'markAiCoverMotion(els.aiCoverApiBaseUrl, "provider-sync")',
+      'markAiCoverMotion(els.aiCoverStatus, "status")',
+      'markAiCoverMotion(els.aiCoverApiStatus, "status")',
+      'markAiCoverMotion(els.aiCoverPromptProfileStatus, "status")'
+    ]),
+  "AI cover motion should clarify platform URL syncing, status feedback, and generated cover arrival while respecting reduced motion"
+);
+assert.ok(
+  contentScriptText.includes('message?.type === "xposter:set-generated-cover"') &&
+    contentScriptText.includes("async function setGeneratedCover") &&
+    contentScriptText.includes('runMain(payload, filePayloads, "set-cover")') &&
+    contentScriptText.includes("MAIN_BRIDGE_TOKEN") &&
+    contentScriptText.includes("shared.validateImagePayload(mime, bytes)") &&
+    mainWorldText.includes("let bridgeToken = \"\"") &&
+    mainWorldText.includes("isAuthorizedMainMessage(event.data)") &&
+    mainWorldText.includes('kind === "set-cover"') &&
+    mainWorldText.includes("async function runCoverOnly") &&
+    mainWorldText.includes("async function uploadCoverImageForMetadata"),
+  "content script should expose a validated direct generated-cover setter that uses an authorized dedicated main-world cover path"
+);
+{
+  const promptSourceStart = sidepanelText.indexOf("  function aiCoverPromptSourceText()");
+  const promptSourceEnd = sidepanelText.indexOf("  async function requestOpenAiCoverImages", promptSourceStart);
+  const promptSourceBody = sidepanelText.slice(promptSourceStart, promptSourceEnd);
+  const selectedSourceStart = sidepanelText.indexOf("  function selectedAiCoverSourceText()");
+  const selectedSourceEnd = sidepanelText.indexOf("  function syncAiCoverPromptInputFromSelection", selectedSourceStart);
+  const selectedSourceBody = sidepanelText.slice(selectedSourceStart, selectedSourceEnd);
+  const runCoverOnlyStart = mainWorldText.indexOf("  async function runCoverOnly");
+  const runCoverOnlyEnd = mainWorldText.indexOf("  function isVisible", runCoverOnlyStart);
+  const runCoverOnlyBody = mainWorldText.slice(runCoverOnlyStart, runCoverOnlyEnd);
+  assert.ok(
+    promptSourceBody.includes("els.aiCoverPromptInput") &&
+      !promptSourceBody.includes("inferredAiCoverSourceText") &&
+      selectedSourceBody.includes("selectedDraftText()") &&
+      !selectedSourceBody.includes("draftText()") &&
+      runCoverOnlyBody.includes("uploadCoverImageForMetadata") &&
+      !runCoverOnlyBody.includes("writeDraftBlocks"),
+    "AI cover generation should use only visible source text and cover-only replacement should not write article body blocks"
+  );
+}
+assert.ok(
+  sidepanelText.includes("function validateAiCoverDataUrl") &&
+    sidepanelText.includes("function validateGeneratedImageResponse") &&
+    sidepanelText.includes("function fetchGeneratedImageAsDataUrl") &&
+    sidepanelText.includes("shared.isRemoteHttpImageSource(url)") &&
+    sidepanelText.includes("shared.validateImagePayload(mime, bytes)") &&
+    sidepanelText.includes("AbortController"),
+  "AI cover generation should validate provider-returned images before decoding and cropping"
+);
 const diagnosticsHtmlIncludesSharedFirst = () =>
   /src="src\/shared\.js"[\s\S]*src="src\/i18n\.js"[\s\S]*src="diagnostics\.js"/.test(diagnosticsHtml);
 const statusHelperStart = contentScriptText.indexOf("  function normalizeText");
@@ -239,7 +514,10 @@ const statusSandbox = {
   document: { body: {}, documentElement: {} },
   getComputedStyle: () => ({ backgroundColor: "rgb(18, 26, 34)" }),
   window: { matchMedia: () => ({ matches: false }) },
-  shared: { toTraditionalChinese: shared.toTraditionalChinese }
+  shared: {
+    toTraditionalChinese: shared.toTraditionalChinese,
+    importProgressForStatus: shared.importProgressForStatus
+  }
 };
 const mediaSandbox = {
   shared: { imageSourcesMatch: shared.imageSourcesMatch },
@@ -779,6 +1057,15 @@ assert.equal(fileTitlePathParsed.title, "Product Plan", "filename title fallback
 assert.equal(explicitTitleCandidateParsed.title, "Manual Candidate", "explicit title candidates should beat filename candidates");
 assert.equal(frontmatterTitleBeatsFileParsed.title, "Meta Title", "frontmatter titles should beat filename candidates");
 assert.equal(frontmatterTitleBeatsFileParsed.titleFromMeta, true, "frontmatter title source should be preserved");
+assert.equal(metadataOnlyParsed.segments.length, 0, "metadata-only frontmatter should not become visible article body");
+assert.deepEqual(
+  metadataOnlyParsed.meta,
+  { tags: "", create: "2026-06-01", update: "2026-06-06" },
+  "empty and date-like frontmatter fields should be preserved as metadata"
+);
+assert.equal(shared.stripMarkdownFrontmatter(metadataOnlyDraft), "", "frontmatter-only Markdown should strip to an empty body");
+assert.equal(spacedFrontmatterParsed.title, "Spaced Meta", "frontmatter parsing should tolerate BOM, leading blank lines, and spaced fences");
+assert.equal(spacedFrontmatterParsed.segments[0]?.text, "Body after metadata.", "spaced frontmatter should be removed before body parsing");
 assert.equal(headingTitleBeatsFileParsed.title, "Heading Title", "first H1 should beat filename candidates");
 assert.equal(headingTitleBeatsFileParsed.titleSource, "heading", "heading title source should be preserved");
 assert.equal(disabledFileTitleParsed.title, null, "disabled title extraction should not use filename candidates");
@@ -851,6 +1138,18 @@ assert.ok(counts.tweet >= 1, "fixture should include a tweet");
 assert.ok(counts.code >= 1, "fixture should include a code block");
 assert.ok(counts.divider >= 1, "fixture should include a divider");
 assert.ok(plan.html.includes("__XPOSTER_"), "paste plan should include replacement markers");
+{
+  const tableOperation = plan.plan.find((item) => item.marker.includes("_TABLE_"));
+  assert.equal(tableOperation?.op?.type, "atomic", "Markdown tables should use X Markdown atomic blocks by default");
+  assert.equal(tableOperation?.op?.entityType, "MARKDOWN", "Markdown tables should use X's MARKDOWN entity");
+  assert.equal(tableOperation?.op?.table, true, "table operations should be marked for table-specific UI copy");
+  assert.ok(tableOperation?.op?.fallbackText?.includes("|"), "table operations should keep Markdown fallback text");
+  assert.equal(
+    plan.plan.some((item) => item.marker.includes("_TABLE_") && item.op.type === "image"),
+    false,
+    "Markdown tables should not be rendered as uploaded table images by default"
+  );
+}
 assert.ok(
   remoteFallbackPlan.plain.includes("![remote cover](https://images.example.test/path/cover.png)"),
   "failed remote images should remain as Markdown image links"
@@ -918,10 +1217,11 @@ assert.ok(
     sidepanelText.includes('bodyImageWarnings ? `${bodyImageWarnings} body kept`') &&
     sidepanelText.includes('tableImageWarnings ? `${tableImageWarnings} table kept`') &&
     sidepanelText.includes('coverImageWarnings ? `${coverImageWarnings} cover missed`') &&
-    sidepanelText.includes('const label = item.op.coverOnly ? "Cover image" : item.marker.includes("_TABLE_") ? "Table image" : "Image";') &&
+    sidepanelText.includes('const label = item.op.coverOnly ? "Cover image" : "Image";') &&
+    sidepanelText.includes('const entity = item.op.table ? "Markdown table"') &&
     sidepanelText.includes('body image(s) kept as Markdown links') &&
     sidepanelText.includes('cover image(s) not applied'),
-  "image failure summaries should distinguish body images, rendered tables, cover image application, and legacy unclassified upload failures"
+  "image failure summaries should distinguish body images, legacy rendered table fallbacks, cover image application, and legacy unclassified upload failures"
 );
 assert.ok(
   contentScriptText.includes('"Local image folder": "本地图片文件夹"') &&
@@ -991,8 +1291,8 @@ assert.ok(
     "--__xposter-import-anchor-top",
     "const IMPORT_BUTTON_ADJACENT_HEIGHT_PX = 52;",
     "min-height: 52px;",
-    "background: rgba(29, 155, 240, 0.10);",
-    "color: #0f6cbf;",
+    "background: color-mix(in oklch, var(--__xposter-import-button-signal), transparent 90%);",
+    "color: var(--__xposter-import-button-signal-text);",
     "__xposter_import_fallback",
     "#${IMPORT_CONFIRM_ID}",
     "window.addEventListener(\"resize\", mount, { passive: true });",
@@ -1071,17 +1371,19 @@ assert.ok(
     'if (intent === "folder") return "page-dock";',
     "Drop image folder here",
     "Release to connect this folder for local images.",
-    "Drop the folder into the blue folder area.",
+    "Drop the folder into the highlighted folder area.",
     "Connecting image folder...",
     "Preparing local image access.",
     "directoryItem && !isDropEventOverSurface(event, \"folder\")",
     "findDirectoryTransferItem(dataTransfer) && isEditorRoute() && findEditor()",
-    "--xposter-drop-signal: #1d9bf0",
-    "--xposter-drop-signal-text: #0f6cbf",
+    "function xPosterDropColorVariables",
+    "${xPosterDropColorVariables(\"light\")}",
     "height: var(--xposter-drop-surface-height, 96px)",
-    "border: 1px solid rgba(29, 155, 240, 0.32)",
-    "border: 1px dashed rgba(29, 155, 240, 0.40)",
-    "linear-gradient(180deg, rgba(248, 252, 255, 0.96), rgba(232, 246, 255, 0.93))",
+    "border: 1px solid color-mix(in oklch, var(--xposter-drop-signal), transparent 68%)",
+    "border: 1px dashed color-mix(in oklch, var(--xposter-drop-signal), transparent 60%)",
+    "--xposter-drop-paper-solid",
+    "--xposter-drop-tint",
+    "linear-gradient(180deg, var(--xposter-drop-paper), var(--xposter-drop-tint))",
     '[data-mode="markdown"][data-surface="page-dock"]::before',
     '[data-mode="folder"][data-surface="page-dock"]::before',
     '[data-mode="folder"][data-surface="page-dock"]::after',
@@ -1102,7 +1404,7 @@ assert.ok(
     "transform: scale(1.001, 1.006)",
     "transform: scale(1.002, 1.008)",
     "transform: translateY(-1px) scale(1.08)",
-    "color: #063b63;",
+    "color: color-mix(in oklch, var(--xposter-drop-signal), var(--xposter-drop-ink) 66%);",
     ".__xposter_drop_status",
     "function dropHintStatusLabel",
     "grid-template-columns: 30px minmax(0, 1fr) auto;",
@@ -1146,6 +1448,8 @@ assert.ok(
       "__xposter_drop_text_focus",
       "__xposter_drop_rail",
       "color: #ffffff;",
+      "Drop the folder into the blue folder area.",
+      "linear-gradient(180deg, rgba(248, 252, 255, 0.96), rgba(232, 246, 255, 0.93))",
       "linear-gradient(90deg, var(--xposter-drop-signal-text), var(--xposter-drop-signal) 52%, #0f7acb)",
       "hint.dataset.intent = intent",
       "hint.dataset.mode = mode",
@@ -1303,7 +1607,7 @@ assert.ok(
     '.__xposter_article_export_actions',
     'opacity: 0',
     'data-placement="fixed"] .__xposter_article_export_actions',
-    '--__xposter-export-paper: #ffffff',
+    'xPosterColorVariables("export", "light", XP_EXPORT_COLOR_KEYS)',
     'border-radius: 999px',
     'background: var(--__xposter-export-paper)',
     'const LANGUAGE_STORAGE_KEY = "xposter_language"',
@@ -1348,18 +1652,28 @@ assert.ok(
 assert.equal(statusSandbox.statusHelpers.statusThemeFromPage(), "dark", "status overlay should detect a dark host surface");
 assert.equal(
   statusSandbox.statusHelpers.statusProgressForText("Preparing Markdown...", "work"),
-  6,
+  8,
   "status background progress should begin during preparation"
 );
 assert.equal(
+  statusSandbox.statusHelpers.statusProgressForText("Checking image file 1/2...", "work"),
+  28,
+  "image file checks should be shown before the X upload phase"
+);
+assert.equal(
   statusSandbox.statusHelpers.statusProgressForText("Uploading image 1/1...", "work"),
-  80,
+  88,
   "the final image upload should leave room for final writing steps"
 );
 assert.equal(
   statusSandbox.statusHelpers.statusProgressForText("Uploading image 1/1... waiting for X to finish.", "work"),
-  80,
+  88,
   "pending X image uploads should keep the visible progress alive"
+);
+assert.equal(
+  statusSandbox.statusHelpers.statusProgressForText("Setting cover...", "work"),
+  76,
+  "cover setup should stay in the late import phase after image upload"
 );
 assert.equal(
   statusSandbox.statusHelpers.statusProgressForText("Cleaning up import markers...", "work"),
@@ -1391,6 +1705,11 @@ assert.deepEqual(
   "cleanup should remove only old importer body classes"
 );
 assert.equal(statusSandbox.statusHelpers.translateContentText("Preparing Markdown..."), "正在准备 Markdown...", "X page status details should follow the selected language");
+assert.equal(
+  statusSandbox.statusHelpers.translateContentText("Checking image file 2/3..."),
+  "正在检查图片文件 2/3...",
+  "X page status should distinguish image file checks from X uploads"
+);
 assert.equal(
   statusSandbox.statusHelpers.translateContentText("Uploading image 4/5... waiting for X to finish."),
   "正在上传图片 4/5，等待 X 完成处理...",
@@ -1592,7 +1911,7 @@ assert.ok(
     contentScriptText.includes("last = { ok: false, error: error?.message || \"Image fetch failed\", source };") &&
     contentScriptText.includes("}, MAIN_WORLD_SILENCE_TIMEOUT_MS);") &&
     contentScriptText.includes("function retryActiveUpload()") &&
-    contentScriptText.includes('window.postMessage({ source: CHANNEL_TO_MAIN, kind: "retry-upload" }, "*");') &&
+    contentScriptText.includes('window.postMessage({ source: CHANNEL_TO_MAIN, kind: "retry-upload", authToken: MAIN_BRIDGE_TOKEN }, "*");') &&
     contentScriptText.includes('message?.type === "xposter:retry-upload"') &&
     sidepanelHtml.includes('id="retryUpload"') &&
     sidepanelElementsText.includes('"retryUpload"') &&
@@ -2067,18 +2386,36 @@ assert.ok(
   "completion summaries should keep pending X media IDs visible alongside media warning text"
 );
 assert.ok(
-  sidepanelText.includes("function writeOptionsPayload") &&
+    sidepanelText.includes("function writeOptionsPayload") &&
+    sidepanelText.includes("let importOptions = { setTitle: true, setCover: false, allowGraphqlMetadata: false, smartPunctuation: false }") &&
+    !sidepanelHtml.includes('id="importCoverOption" checked') &&
     sidepanelText.includes("sourceFileName = \"\"") &&
+    sidepanelText.includes("celebrateOnComplete = true") &&
+    sidepanelText.includes("const allowGraphqlMetadata = options.allowGraphqlMetadata === true") &&
+    sidepanelText.includes("setCover: allowGraphqlMetadata && options.setCover === true") &&
+    sidepanelText.includes("allowGraphqlMetadata,") &&
     sidepanelText.includes("...normalizeImportOptions({") &&
     sidepanelText.includes("sourceFileName") &&
     sidepanelText.includes("forceNewArticle: Boolean(forceNewArticle)") &&
-    sidepanelText.includes("options: writeOptionsPayload({ forceNewArticle: batch, sourceFileName: writeSourceFileName })") &&
+    sidepanelText.includes("celebrateOnComplete: celebrateOnComplete !== false") &&
+    sidepanelText.includes("options: writeOptionsPayload({ forceNewArticle: batch, sourceFileName: writeSourceFileName, celebrateOnComplete })") &&
+    sidepanelText.includes("const coverEnabled = els.importCoverOption?.checked === true") &&
+    sidepanelText.includes("allowGraphqlMetadata: coverEnabled") &&
+    contentScriptText.includes("const allowGraphqlMetadata = options.allowGraphqlMetadata === true") &&
+    contentScriptText.includes("setCover: allowGraphqlMetadata && options.setCover === true") &&
+    contentScriptText.includes("allowGraphqlMetadata,") &&
     contentScriptText.includes("const forceNewArticle = Boolean(options.forceNewArticle)") &&
+    contentScriptText.includes("pastePlan.allowGraphqlMetadata = importOptions.allowGraphqlMetadata === true") &&
+    contentScriptText.includes("const coverSource = importOptions.allowGraphqlMetadata === true ? limitedParsed.cover || \"\" : \"\"") &&
     contentScriptText.includes('if (origin !== "paste" && (forceNewArticle || !findEditor()))') &&
     contentScriptText.includes("await ensureEditorReadyForFileImport({ forceNew: forceNewArticle })") &&
     contentScriptText.includes("async function ensureEditorReadyForFileImport({ forceNew = false } = {})") &&
-    contentScriptText.includes("if (!forceNew && isEditorRoute() && findEditor()) return;"),
-  "side panel writes should include saved title/cover options and batch queue writes should force each draft into a new X Article"
+    contentScriptText.includes("if (!forceNew && isEditorRoute() && findEditor()) return;") &&
+    mainWorldText.includes("const allowGraphqlMetadata = payload.allowGraphqlMetadata === true") &&
+    mainWorldText.includes("if (articleId && allowGraphqlMetadata && !summary.title.graphql?.ok)") &&
+    mainWorldText.includes("if (!allowGraphqlMetadata || !title || !articleId || summary.title.graphql?.ok) return false;") &&
+    mainWorldText.includes("if (!allowGraphqlMetadata) return false;"),
+  "side panel writes should default to UI-only metadata, and cover metadata should require explicit opt-in"
 );
 assert.ok(
   sidepanelHtml.includes('id="articleExportOptions"') &&
@@ -2135,7 +2472,7 @@ assert.ok(
     sidepanelCss.includes("#recordHistoryMeta::before") &&
     sidepanelCss.includes(".record-clear-button") &&
     sidepanelCss.includes(".record-clear-wrap[hidden]") &&
-    sidepanelCss.includes("border-radius: 999px;") &&
+    sidepanelCss.includes("border-radius: 0;") &&
     sidepanelCss.includes("text-decoration: none;"),
   "record history metadata toolbar should keep balanced two-column alignment and avoid underlined clear-all text"
 );
@@ -2186,9 +2523,16 @@ assert.ok(
   "record clear-all and record history refreshes should use changed-only DOM writes with a dismissible second confirmation"
 );
 assert.ok(
-  /\.draft-editor-status\s*\{[\s\S]*?background:\s*var\(--paper\);/.test(sidepanelCss) &&
+  /\.draft-editor-status\s*\{[\s\S]*?grid-row:\s*3;[\s\S]*?background:\s*var\(--paper\);/.test(sidepanelCss) &&
+    /body\s*\{[\s\S]*?height:\s*100vh;[\s\S]*?height:\s*100dvh;[\s\S]*?overflow:\s*hidden;/.test(sidepanelCss) &&
+    /\.shell\s*\{[\s\S]*?height:\s*100vh;[\s\S]*?height:\s*100dvh;[\s\S]*?min-height:\s*0;/.test(sidepanelCss) &&
+    /\.panel\.active\s*\{[\s\S]*?overflow:\s*auto;/.test(sidepanelCss) &&
+    /\.composer\.panel\.active\s*\{[\s\S]*?overflow:\s*hidden;/.test(sidepanelCss) &&
+    sidepanelCss.includes("grid-template-rows: auto minmax(0, 1fr) auto;") &&
+    sidepanelCss.includes("height: 100%;\n  max-height: 100%;\n  overflow: auto;") &&
+    !sidepanelCss.includes("position: absolute;\n  inset-inline: 0;\n  bottom: 0;") &&
     !sidepanelCss.includes(':root[data-theme="dark"] .draft-editor-status'),
-  "draft editor status bar should keep the Preview control on a flat paper background"
+  "draft editor status bar should stay in the fixed bottom grid row while the preview body scrolls independently"
 );
 assert.ok(
   /\.progress-meter span\s*\{[\s\S]*?width:\s*100%;[\s\S]*?transform:\s*scaleX\(0\);[\s\S]*?transition:\s*transform 180ms ease-out, background-color 180ms ease-out;/.test(sidepanelCss) &&
@@ -2385,14 +2729,14 @@ assert.ok(
 );
 {
   const titleBeforeBody =
-    mainWorldText.indexOf("await applyTitleMetadata(payload.title, articleId, summary);") <
+    mainWorldText.indexOf("await applyTitleMetadata(payload.title, articleId, summary, { allowGraphqlMetadata });") <
     mainWorldText.indexOf('progress("Pasting structured Markdown...")');
   const orderedImageOps =
     mainWorldText.includes('const imageOps = (payload.plan || []).filter((item) => item.op.type === "image");') &&
     !mainWorldText.includes("function orderImageOperationsForMetadata") &&
     !mainWorldText.includes("coverPriorityForImageOperation");
   const coverAfterUpload =
-    mainWorldText.indexOf("await applyCoverMetadata(payload.cover, articleId, upload, summary);") >
+    mainWorldText.indexOf("await applyCoverMetadata(payload.cover, articleId, upload, summary, { allowGraphqlMetadata });") >
     mainWorldText.indexOf("const result = await uploadImageAtMarker");
   const timelineMetadataFirst =
     sidepanelHtml.indexOf('data-timeline-step="metadata"') < sidepanelHtml.indexOf('data-timeline-step="media"') &&
@@ -2457,7 +2801,19 @@ assert.ok(
       "function miniGfm()",
       "function protectReadPreviewCodeBlocks",
       "function restoreReadPreviewCodeBlocks",
+      "function protectReadPreviewImages",
+      "function restoreReadPreviewImages",
+      "function findReadPreviewClosingParen",
       "function sanitizePreviewHtml",
+      "function wrapPreviewImages",
+      "function markPreviewImageUnavailable",
+      "function markPreviewImageLoaded",
+      "shared.stripMarkdownFrontmatter(markdown)",
+      "const { protectedMarkdown: codeProtectedMarkdown, codeBlocks } = protectReadPreviewCodeBlocks(visibleMarkdown);",
+      "const { protectedMarkdown, images } = protectReadPreviewImages(codeProtectedMarkdown);",
+      "restoreReadPreviewImages(renderer.parse(protectedMarkdown), images)",
+      "Only frontmatter metadata is present. It will not be written as article body.",
+      "Image preview unavailable",
       "const schemeMatch = raw.match",
       "return /^(https?|mailto|tel|ftp)$/i.test(schemeMatch[1]) ? raw : \"\";",
       "function markdownSegmentCounts",
@@ -2559,6 +2915,8 @@ assert.ok(
       'setLocalizedTextIfChanged(els.draftInlinePreviewMeta, "Paste Markdown to read it here.")',
       "setSourceHtmlIfChanged(els.draftInlinePreviewBody, emptyMarkdownPreviewHtml())",
       "setSourceHtmlIfChanged(els.draftInlinePreviewBody, markdownPreviewHtml(text))",
+      'els.draftInlinePreview?.addEventListener("error"',
+      'els.draftInlinePreview?.addEventListener("load"',
       "function paintStartupShell",
       "runAfterFirstPaint(() =>",
       "restoreStartupState().catch(() => analyzeDraft());",
@@ -2638,10 +2996,11 @@ assert.ok(
       "--draft-editor-field:",
       "border: 0;",
       ".draft-editor-shell:focus-within",
-      ".panel.active {\n  min-height: 0;\n  display: grid;\n  align-self: stretch;",
+      ".panel.active {\n  min-height: 0;\n  min-width: 0;\n  display: grid;",
+      ".composer.panel.active",
       "align-content: stretch;",
       "grid-template-rows: auto auto minmax(0, 1fr) auto;",
-      ".composer {\n  position: relative;\n  height: 100%;\n  min-height: 0;",
+      ".composer {\n  position: relative;\n  height: 100%;\n  min-height: 0;\n  min-width: 0;",
       ".composer[data-queue-mode=\"true\"]",
       ".composer[data-queue-mode=\"true\"] .draft-queue",
       "  .composer {\n    height: 100%;\n    min-height: 0;\n    align-content: stretch;\n    grid-template-rows: auto auto minmax(0, 1fr) auto;",
@@ -2668,6 +3027,10 @@ assert.ok(
       ".draft-token-code",
       '.draft-inline-preview[data-preview-mode="read"]',
       ".draft-inline-preview",
+      "overscroll-behavior: contain;",
+      "padding: 15px 17px 20px;",
+      ".draft-preview-image-fallback",
+      '.draft-preview-image[data-preview-state="error"]',
       "--draft-content-font:",
       '"PingFang SC"',
       "font-family: var(--draft-content-font);",
@@ -2683,7 +3046,9 @@ assert.ok(
       ".panel.active > *,",
       "stroke-linecap: round;",
       "@media (max-width: 520px)",
-      ".draft-editor-formatting {\n    overflow-x: auto;\n    flex-wrap: nowrap;"
+      ".draft-editor-formatting {\n    overflow-x: auto;\n    flex-wrap: nowrap;",
+      ".composer[data-empty-draft=\"true\"] #loadFile {\n    width: 30px;",
+      ".composer[data-empty-draft=\"true\"] #loadFile span {\n    position: absolute;"
     ]) &&
     excludesAll(sidepanelCss, [
       "box-shadow: 0 -16px 30px rgba(15, 20, 25, 0.10);",
@@ -2772,7 +3137,8 @@ assert.ok(
     sidepanelText.includes('setLocalizedTextIfChanged(els.targetReady, target)') &&
     sidepanelText.includes('setLocalizedTextIfChanged(els.editorReady, editor)') &&
     sidepanelText.includes('setLocalizedTextIfChanged(els.vaultReady, vault)') &&
-    sidepanelMessagesText.includes("Preparing Markdown, images, and the X editor.") &&
+    sidepanelMessagesText.includes("Preparing the article and X editor.") &&
+    sidepanelMessagesText.includes("Checking image files before upload.") &&
     sidepanelPatternsText.includes("Article written(?: in (.+))?") &&
     !sidepanelCss.includes("linear-gradient(") &&
     !sidepanelCss.includes("radial-gradient(") &&
@@ -3448,7 +3814,7 @@ assert.ok(
     sidepanelText.includes('setDatasetValueIfChanged(document.body, "language", currentLanguage)') &&
     sidepanelText.includes('setDatasetValueIfChanged(document.body, "languagePreference", i18n?.preference?.() || currentLanguage)') &&
     sidepanelText.includes('setBooleanPropertyIfChanged(els.importTitleOption, "checked", importOptions.setTitle !== false)') &&
-    sidepanelText.includes('setBooleanPropertyIfChanged(els.importCoverOption, "checked", importOptions.setCover !== false)') &&
+    sidepanelText.includes('setBooleanPropertyIfChanged(els.importCoverOption, "checked", importOptions.setCover === true)') &&
     sidepanelText.includes('setBooleanPropertyIfChanged(els.smartPunctuationOption, "checked", importOptions.smartPunctuation === true)') &&
     sidepanelText.includes('setBooleanPropertyIfChanged(els.articleExportOption, "checked", articleExportOptions.enabled !== false)') &&
     sidepanelText.includes('setBooleanPropertyIfChanged(els.confettiOption, "checked", successFeedbackOptions.confetti !== false)') &&
@@ -3482,11 +3848,21 @@ assert.ok(
 assert.ok(
   sidepanelText.includes("if (!batch || draftQueue.length === 0)") &&
     sidepanelText.includes("triggerSuccessFeedback(response.summary)") &&
+    sidepanelText.includes("function schedulePageSuccessCelebrationFallback(summary = null)") &&
     sidepanelText.includes("requestPageSuccessCelebration(summary)") &&
     sidepanelText.includes('type: "xposter:success-celebration"') &&
     sidepanelText.includes("colors: SUCCESS_CELEBRATION_COLORS") &&
-    sidepanelText.includes("lastSuccessFeedbackKey"),
-  "successful imports should request one celebration on the active X page, and batch writes should wait for the final queued item"
+    sidepanelText.includes("lastSuccessFeedbackKey") &&
+    sidepanelText.includes("celebrateOnComplete: celebrateOnComplete !== false") &&
+    sidepanelText.includes("const celebrateOnComplete = !batch || draftQueue.length <= 1;") &&
+    contentScriptText.includes('const SUCCESS_FEEDBACK_STORAGE_KEY = "xposter_success_feedback"') &&
+    contentScriptText.includes("function installSuccessFeedbackSettingsSync()") &&
+    contentScriptText.includes("const celebrateOnComplete = options.celebrateOnComplete !== false;") &&
+    contentScriptText.includes("return state.successFeedback;") &&
+    !contentScriptText.includes("chrome.storage.local.get(SUCCESS_FEEDBACK_STORAGE_KEY).catch(() => ({}))") &&
+    contentScriptText.includes("await restoreSuccessFeedbackSettings().catch(() => {});") &&
+    contentScriptText.includes("showSuccessCelebration();"),
+  "successful imports should trigger the X-page celebration in the content script, keep a side-panel fallback, and wait until the final queued item"
 );
 assert.ok(
   sidepanelText.includes('return ["running", "parsed", "error"].includes(progress?.state);') &&
@@ -3517,20 +3893,25 @@ assert.ok(
     includesAll(contentScriptText, [
       'const SUCCESS_CELEBRATION_ID = "__xposter_success_celebration__"',
       'const SUCCESS_CELEBRATION_STYLE_ID = "__xposter_success_celebration_style__"',
-      "const SUCCESS_CELEBRATION_DURATION_MS = 3200",
-      "const SUCCESS_CELEBRATION_PIECE_COUNT = 72",
+      "const SUCCESS_CELEBRATION_DURATION_MS = 2400",
+      "const SUCCESS_CELEBRATION_PIECE_COUNT = 56",
+      "const SUCCESS_CELEBRATION_DEDUP_MS = 2000",
       "function injectSuccessCelebrationStyle",
       "function showSuccessCelebration",
+      "state.successFeedback.confetti === false",
+      "state.lastSuccessCelebrationAt",
+      "suppressedReason",
       "prefersReducedMotion()",
       "position: fixed;",
       "width: 100vw;",
       "height: 100dvh;",
-      "animation: __xposter_success_piece 2600ms",
+      "animation: __xposter_success_piece 2100ms",
       "window.setTimeout(() => root.remove(), SUCCESS_CELEBRATION_DURATION_MS)",
       ".__xposter_success_mark",
       ".__xposter_success_piece",
       "prefers-reduced-motion: reduce",
-      'message?.type === "xposter:success-celebration"'
+      'message?.type === "xposter:success-celebration"',
+      "sendResponse({ ok: true, ...result })"
     ]),
   "celebration should render on the X page through the content script, not side panel canvas confetti"
 );
