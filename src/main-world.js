@@ -330,6 +330,20 @@
     return count;
   }
 
+  function countAnyMarkerTokens(draftNode) {
+    if (!draftNode) return 0;
+    let count = 0;
+    const markerPattern = allMarkerTokenPattern();
+    draftNode.props.editorState
+      .getCurrentContent()
+      .getBlockMap()
+      .forEach((block) => {
+        const matches = (block.getText() || "").match(markerPattern);
+        if (matches?.length) count += matches.length;
+      });
+    return count;
+  }
+
   async function waitForDraftMarkers(markerPrefix, expectedCount, timeoutMs = 4000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -1094,6 +1108,36 @@
     return toDelete.length + replacements.length;
   }
 
+  async function cleanupMarkersUntilGone(draftNode, markerPrefix, timeoutMs = 8000, stableMs = 1200) {
+    const deadline = Date.now() + timeoutMs;
+    let cleaned = 0;
+    let remaining = Number.POSITIVE_INFINITY;
+    let latestNode = draftNode;
+    let zeroSince = 0;
+
+    while (Date.now() < deadline) {
+      latestNode = findDraftStateNode() || latestNode;
+      cleaned += cleanupMarkers(latestNode, markerPrefix);
+      await sleep(120);
+      latestNode = findDraftStateNode() || latestNode;
+      remaining = countAnyMarkerTokens(latestNode);
+      if (!remaining) {
+        if (!zeroSince) zeroSince = Date.now();
+        if (Date.now() - zeroSince >= stableMs) return { draftNode: latestNode, cleaned, remaining: 0 };
+      } else {
+        zeroSince = 0;
+      }
+      await sleep(180);
+    }
+
+    latestNode = findDraftStateNode() || latestNode;
+    cleaned += cleanupMarkers(latestNode, markerPrefix);
+    await sleep(120);
+    latestNode = findDraftStateNode() || latestNode;
+    remaining = countAnyMarkerTokens(latestNode);
+    return { draftNode: latestNode, cleaned, remaining };
+  }
+
   async function settleUploadedImageAtMarker(draftNode, upload, protectedAtomicBlocks) {
     if (!upload || upload.coverOnly) {
       return { draftNode, moved: 0, missing: 0, markerCleaned: 0 };
@@ -1339,6 +1383,7 @@
       imgPending: 0,
       imageErrors: [],
       markersCleaned: 0,
+      markersRemaining: 0,
       relocatedImages: 0,
       title: {
         requested: Boolean(payload.title),
@@ -1497,9 +1542,25 @@
         }
       }
 
+      const pendingMediaUploads = uploads.filter((upload) => !upload.coverOnly && !upload.mediaId);
+      if (pendingMediaUploads.length) {
+        throwIfCancelled();
+        progress(`Waiting for ${pendingMediaUploads.length} media upload(s) to settle...`);
+        for (const upload of pendingMediaUploads) {
+          const refreshed = await waitForUploadMediaId(draftNode, upload, 12000);
+          draftNode = refreshed.draftNode;
+        }
+      }
+
       progress("Cleaning up import markers...");
       draftNode = findDraftStateNode() || draftNode;
-      summary.markersCleaned += cleanupMarkers(draftNode, payload.markerPrefix);
+      const cleanupResult = await cleanupMarkersUntilGone(draftNode, payload.markerPrefix);
+      draftNode = cleanupResult.draftNode;
+      summary.markersCleaned += cleanupResult.cleaned;
+      summary.markersRemaining = cleanupResult.remaining;
+      if (cleanupResult.remaining) {
+        throw new Error(`${cleanupResult.remaining} xPoster marker token(s) remain in the X editor. Do not publish; run the import cleanup again or remove them manually.`);
+      }
       kickRender(draftNode);
       await sleep(250);
       post("done", { summary });
@@ -1508,7 +1569,10 @@
         try {
           progress("Cleaning up import markers...", error?.cancelled ? "warn" : "work");
           draftNode = findDraftStateNode() || draftNode;
-          summary.markersCleaned += cleanupMarkers(draftNode, payload.markerPrefix);
+          const cleanupResult = await cleanupMarkersUntilGone(draftNode, payload.markerPrefix);
+          draftNode = cleanupResult.draftNode;
+          summary.markersCleaned += cleanupResult.cleaned;
+          summary.markersRemaining = cleanupResult.remaining;
           kickRender(draftNode);
         } catch (cleanupError) {
           console.warn(LOG, "marker cleanup after interrupted import failed", cleanupError);
